@@ -7,6 +7,7 @@ import pipeline
 from media import InputError
 from models import Sentence
 from pipeline import Deps, process
+from retry import BusyError
 from select_clips import SelectionError
 from transcribe import QuotaError, TranscriptionError
 
@@ -51,6 +52,10 @@ class PipelineTests(unittest.TestCase):
     def test_input_error_text_passthrough(self):
         out = self.run_with(fetch_effect=InputError("پیام ویژه"))
         self.assertEqual(out, ["پیام ویژه"])
+
+    def test_busy(self):
+        out = self.run_with(transcribe_effect=BusyError("x"))
+        self.assertEqual(out, ["Gemini الان شلوغ است؛ چند دقیقه بعد دوباره بفرست."])
 
     def test_selection_error(self):
         with mock.patch.object(pipeline, "select_clips", side_effect=SelectionError("x")):

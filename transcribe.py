@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from models import Sentence, Word
+from retry import call_with_fallback, models_from_env
 from timeline import fix_word_times, words_to_sentences
 
 
@@ -66,13 +67,15 @@ class GeminiClient:
         from google import genai
         self._genai = genai
         self._client = genai.Client(api_key=api_key)
-        self._model = model or os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+        self._models = [model] if model else models_from_env()
 
     def _ask(self, audio: Path, prompt: str) -> list[dict]:
         f = self._client.files.upload(file=str(audio))
-        resp = self._client.models.generate_content(
-            model=self._model, contents=[prompt, f],
-            config={"response_mime_type": "application/json"})
+        resp = call_with_fallback(
+            lambda m: self._client.models.generate_content(
+                model=m, contents=[prompt, f],
+                config={"response_mime_type": "application/json"}),
+            self._models)
         try:
             data = json.loads(resp.text)
         except (ValueError, TypeError):

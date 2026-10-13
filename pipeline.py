@@ -5,6 +5,7 @@ from pathlib import Path
 
 from formatting import format_messages
 from media import InputError, fetch_input, resolve_input, to_audio
+from retry import BusyError
 from select_clips import SelectionError, select_clips
 from snap import snap_clips
 from transcribe import QuotaError, TranscriptionError, transcribe
@@ -12,6 +13,7 @@ from transcribe import QuotaError, TranscriptionError, transcribe
 QUOTA = "سهمیه‌ی رایگان Gemini پر شده؛ کمی بعد دوباره بفرست."
 NO_SPEECH = "هیچ گفتاری در فایل پیدا نشد."
 SELECTION_FAILED = "انتخاب کلیپ‌ها ناموفق بود؛ دوباره امتحان کن."
+BUSY = "Gemini الان شلوغ است؛ چند دقیقه بعد دوباره بفرست."
 GENERIC = "مشکلی پیش آمد؛ کمی بعد دوباره امتحان کن."
 
 
@@ -35,6 +37,8 @@ def process(message: dict, deps: Deps) -> list[str]:
         return format_messages(clips, sentences, sentences[-1].end)
     except InputError as e:
         return [str(e)]
+    except BusyError:
+        return [BUSY]
     except QuotaError:
         return [QUOTA]
     except TranscriptionError:

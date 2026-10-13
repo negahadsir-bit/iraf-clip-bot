@@ -1,5 +1,6 @@
 import json
 from models import Clip, Sentence
+from retry import BusyError, call_with_fallback, models_from_env
 from timeline import to_transcript
 
 MAX_CLIPS = 12
@@ -21,6 +22,8 @@ def select_clips(sentences: list[Sentence], rules: str, client) -> list[Clip]:
     prompt = f"{rules}\n\n{_TASK}\n\nمتن با زمان (دقیقه:ثانیه):\n{to_transcript(sentences)}"
     try:
         raw = client.generate_json(prompt)
+    except BusyError:
+        raise
     except Exception as e:  # noqa: BLE001
         raise SelectionError(str(e)) from e
     if not isinstance(raw, list):
@@ -42,13 +45,14 @@ def select_clips(sentences: list[Sentence], rules: str, client) -> list[Clip]:
 
 class GeminiTextClient:
     def __init__(self, api_key: str, model: str = None):
-        import os
         from google import genai
         self._client = genai.Client(api_key=api_key)
-        self._model = model or os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+        self._models = [model] if model else models_from_env()
 
     def generate_json(self, prompt: str) -> list[dict]:
-        resp = self._client.models.generate_content(
-            model=self._model, contents=prompt,
-            config={"response_mime_type": "application/json"})
+        resp = call_with_fallback(
+            lambda m: self._client.models.generate_content(
+                model=m, contents=prompt,
+                config={"response_mime_type": "application/json"}),
+            self._models)
         return json.loads(resp.text)
