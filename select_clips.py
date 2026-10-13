@@ -75,3 +75,12 @@ class GeminiTextClient:
                 config={"response_mime_type": "application/json"}),
             self._models)
         return json.loads(resp.text)
+
+
+def make_select_client(env, gemini_key: str):
+    """DeepSeek when DEEPSEEK_API_KEY is set (non-empty), otherwise Gemini."""
+    key = (env.get("DEEPSEEK_API_KEY") or "").strip()
+    if key:
+        from deepseek import DeepSeekTextClient
+        return DeepSeekTextClient(key)
+    return GeminiTextClient(gemini_key)
