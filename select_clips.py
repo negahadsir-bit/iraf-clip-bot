@@ -2,10 +2,9 @@ import json
 import sys
 from models import Clip, Sentence
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
-from timeline import to_transcript
 
 MAX_CLIPS = 12
-MIN_DUR, MAX_DUR = 15.0, 90.0
+MIN_DUR, MAX_DUR = 20.0, 90.0
 
 
 class SelectionError(Exception):
@@ -15,15 +14,24 @@ class SelectionError(Exception):
 def _task(want: int) -> str:
     return (
         f"تو دستیار انتخاب کلیپ از مصاحبه‌های بلند هستی. بر اساس قوانین بالا، حداکثر {want} بازه‌ی "
-        "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر؛ اگر چیز خوبی نیست "
-        "فهرست خالی برگردان. فقط JSON برگردان: "
-        '[{"rank": 1, "start": ثانیه, "end": ثانیه, "reason": "دلیل کوتاه به فارسی"}]. '
-        "start و end باید از زمان‌های متن زیر باشند.")
+        "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر، و تا جای ممکن در "
+        f"همان {want} مورد پر کن، پخش‌شده در کل مصاحبه (نه فقط ابتدا)؛ اگر چیز خوبی نیست "
+        "فهرست خالی برگردان. هر جمله با شماره‌ی [n] آمده. فقط JSON برگردان: "
+        '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی"}]. '
+        "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from.")
+
+
+def _numbered(sentences: list[Sentence]) -> str:
+    lines = []
+    for i, s in enumerate(sentences):
+        sec = int(s.start)
+        lines.append(f"[{i}] {sec // 60}:{sec % 60:02d} {s.text}")
+    return "\n".join(lines)
 
 
 def select_clips(sentences: list[Sentence], rules: str, client,
                  want: int = 10) -> list[Clip]:
-    prompt = f"{rules}\n\n{_task(want)}\n\nمتن با زمان (دقیقه:ثانیه):\n{to_transcript(sentences)}"
+    prompt = f"{rules}\n\n{_task(want)}\n\nجمله‌ها (شماره، زمان، متن):\n{_numbered(sentences)}"
     try:
         raw = client.generate_json(prompt)
     except (BusyError, QuotaError):
@@ -32,31 +40,31 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         raise SelectionError(str(e)) from e
     if not isinstance(raw, list):
         raise SelectionError("not a list")
-    end_of_episode = sentences[-1].end if sentences else 0.0
+    n = len(sentences)
     clips = []
-    drops = {"out_of_range": 0, "too_short": 0, "too_long": 0}
-    for d in raw:
+    drops = {"bad_index": 0, "bad_length": 0, "overlap": 0}
+    for d in sorted(raw, key=lambda d: d.get("rank", 0) if isinstance(d, dict) else 0):
         try:
-            c = Clip(int(d["rank"]), float(d["start"]), float(d["end"]), str(d.get("reason", "")))
+            rank, a, b = int(d["rank"]), int(d["from"]), int(d["to"])
+            reason = str(d.get("reason", ""))
         except (KeyError, TypeError, ValueError, AttributeError):
             raise SelectionError("malformed item")
-        dur = c.end - c.start
-        if c.end <= c.start or not (0 <= c.start < end_of_episode):
-            drops["out_of_range"] += 1
+        if not (0 <= a <= b < n):
+            drops["bad_index"] += 1
             continue
-        if dur < MIN_DUR:
-            drops["too_short"] += 1
+        c = Clip(rank, sentences[a].start, sentences[b].end, reason)
+        if not (MIN_DUR <= c.end - c.start <= MAX_DUR):
+            drops["bad_length"] += 1
             continue
-        if dur > MAX_DUR:
-            drops["too_long"] += 1
+        if any(c.start < k.end and k.start < c.end for k in clips):
+            drops["overlap"] += 1
             continue
         clips.append(c)
     print(f"selection: raw={len(raw)} kept={len(clips)} "
           + " ".join(f"{k}={v}" for k, v in drops.items())
-          + f" episode_end={end_of_episode:.0f}s sentences={len(sentences)}", file=sys.stderr, flush=True)
+          + f" sentences={n}", file=sys.stderr, flush=True)
     print(f"selection raw json: {json.dumps(raw, ensure_ascii=False)[:1500]}",
           file=sys.stderr, flush=True)
-    clips.sort(key=lambda c: c.rank)
     return clips[:min(want, MAX_CLIPS)]
 
 
