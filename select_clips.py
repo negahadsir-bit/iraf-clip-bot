@@ -4,7 +4,8 @@ from models import Clip, Sentence
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 
 MAX_CLIPS = 12
-MIN_DUR, MAX_DUR = 20.0, 90.0
+WORDS_PER_SEC = 2.6
+MIN_DUR, TARGET_MIN, MAX_DUR = 20.0, 35.0, 75.0
 
 
 class SelectionError(Exception):
@@ -19,6 +20,12 @@ def _task(want: int) -> str:
         "فهرست خالی برگردان. هر جمله با شماره‌ی [n] آمده. فقط JSON برگردان: "
         '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی"}]. '
         "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from.")
+
+
+def _dur(sentences: list[Sentence], a: int, b: int) -> float:
+    """Timestamps are approximate, so never trust them below what the words need."""
+    words = sum(len(s.text.split()) for s in sentences[a:b + 1])
+    return max(sentences[b].end - sentences[a].start, words / WORDS_PER_SEC)
 
 
 def _numbered(sentences: list[Sentence]) -> str:
@@ -52,8 +59,12 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         if not (0 <= a <= b < n):
             drops["bad_index"] += 1
             continue
+        while _dur(sentences, a, b) < TARGET_MIN and b + 1 < n:
+            b += 1  # the model cannot see durations: grow short picks sentence by sentence
+        while _dur(sentences, a, b) > MAX_DUR and b > a:
+            b -= 1
         c = Clip(rank, sentences[a].start, sentences[b].end, reason)
-        if not (MIN_DUR <= c.end - c.start <= MAX_DUR):
+        if not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):
             drops["bad_length"] += 1
             continue
         if any(c.start < k.end and k.start < c.end for k in clips):
