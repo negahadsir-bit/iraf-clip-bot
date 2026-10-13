@@ -27,7 +27,7 @@ def _split(audio: Path, workdir: Path, chunk_seconds: int) -> list[Path]:
 
 
 def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 300,
-               progress=None) -> list[Sentence]:
+               progress=None, on_chunk=None) -> list[Sentence]:
     workdir = Path(workdir or tempfile.mkdtemp())
     result: list[Sentence] = []
     chunks = _split(audio, workdir, chunk_seconds)
@@ -43,9 +43,12 @@ def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 3
                 raise QuotaError(str(e)) from e
             raise
         off = i * chunk_seconds
+        shifted = [Sentence(s.text, s.start + off, s.end + off) for s in sentences]
+        result += shifted
+        if on_chunk and shifted:
+            on_chunk(shifted)
         if progress:
             progress(i + 1, len(chunks))
-        result += [Sentence(s.text, s.start + off, s.end + off) for s in sentences]
     if not result:
         raise TranscriptionError("empty transcript")
     return result

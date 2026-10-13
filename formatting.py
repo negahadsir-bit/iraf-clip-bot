@@ -51,3 +51,16 @@ def format_messages(clips: list[Clip], sentences: list[Sentence],
             current = block
     messages.append(current)
     return messages
+
+
+def format_clip(clip: Clip, sentences: list[Sentence]) -> str:
+    dialogue = " ".join(s.text for s in sentences
+                        if s.start >= clip.start - 0.05 and s.end <= clip.end + 0.05) or "—"
+    reason = clip.reason if len(clip.reason) <= MAX_REASON else clip.reason[:MAX_REASON] + "…"
+    head = (f"🎬 برش {clip.rank}\n"
+            f"{fmt_time(clip.start)} – {fmt_time(clip.end)} ({round(clip.end - clip.start)}ث)\n\n")
+    tail = f"\n\nچرا: {reason}"
+    room = LIMIT - len(head) - len(tail) - 2
+    if len(dialogue) > room:
+        dialogue = dialogue[:room - 1] + "…"
+    return f"{head}«{dialogue}»{tail}"

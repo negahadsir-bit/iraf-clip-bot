@@ -11,15 +11,18 @@ class SelectionError(Exception):
     pass
 
 
-_TASK = (
-    "تو دستیار انتخاب کلیپ از مصاحبه‌های بلند هستی. بر اساس قوانین بالا، حدود ۱۰ بازه‌ی "
-    "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر. فقط JSON برگردان: "
-    '[{"rank": 1, "start": ثانیه, "end": ثانیه, "reason": "دلیل کوتاه به فارسی"}]. '
-    "start و end باید از زمان‌های متن زیر باشند.")
+def _task(want: int) -> str:
+    return (
+        f"تو دستیار انتخاب کلیپ از مصاحبه‌های بلند هستی. بر اساس قوانین بالا، حداکثر {want} بازه‌ی "
+        "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر؛ اگر چیز خوبی نیست "
+        "فهرست خالی برگردان. فقط JSON برگردان: "
+        '[{"rank": 1, "start": ثانیه, "end": ثانیه, "reason": "دلیل کوتاه به فارسی"}]. '
+        "start و end باید از زمان‌های متن زیر باشند.")
 
 
-def select_clips(sentences: list[Sentence], rules: str, client) -> list[Clip]:
-    prompt = f"{rules}\n\n{_TASK}\n\nمتن با زمان (دقیقه:ثانیه):\n{to_transcript(sentences)}"
+def select_clips(sentences: list[Sentence], rules: str, client,
+                 want: int = 10) -> list[Clip]:
+    prompt = f"{rules}\n\n{_task(want)}\n\nمتن با زمان (دقیقه:ثانیه):\n{to_transcript(sentences)}"
     try:
         raw = client.generate_json(prompt)
     except (BusyError, QuotaError):
@@ -40,7 +43,7 @@ def select_clips(sentences: list[Sentence], rules: str, client) -> list[Clip]:
             continue
         clips.append(c)
     clips.sort(key=lambda c: c.rank)
-    return clips[:MAX_CLIPS]
+    return clips[:min(want, MAX_CLIPS)]
 
 
 class GeminiTextClient:

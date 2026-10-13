@@ -3,8 +3,9 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from formatting import format_messages
+from formatting import format_clip
 from media import InputError, fetch_input, resolve_input, to_audio
+from models import Clip
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
 from snap import snap_clips
@@ -50,28 +51,58 @@ def _progress_reporter(message: dict, deps: Deps):
     return report
 
 
+PER_CHUNK = 2
+
+
 def process(message: dict, deps: Deps) -> list[str]:
+    chat_id = message.get("chat", {}).get("id")
+    found: list[Clip] = []
+    unsent: list[str] = []
+    failures: list[Exception] = []
+
+    def on_chunk(sents):
+        try:
+            clips = snap_clips(select_clips(sents, deps.rules, deps.select_client,
+                                            want=PER_CHUNK), sents)
+        except (BusyError, QuotaError, SelectionError) as e:
+            print(f"selection skipped: {type(e).__name__}: {e}", file=sys.stderr)
+            failures.append(e)
+            return
+        for c in clips:
+            clip = Clip(len(found) + 1, c.start, c.end, c.reason)
+            found.append(clip)
+            text = format_clip(clip, sents)
+            try:
+                deps.tg.send_message(chat_id, text)
+            except Exception:  # noqa: BLE001 - keep the clip, return it at the end
+                unsent.append(text)
+
     try:
         ref = resolve_input(message)
         src = fetch_input(ref, deps.tg, deps.workdir)
         audio = to_audio(src, deps.workdir / "audio.mp3")
-        sentences = transcribe(audio, deps.transcribe_client, workdir=deps.workdir,
-                               progress=_progress_reporter(message, deps))
-        clips = select_clips(sentences, deps.rules, deps.select_client)
-        clips = snap_clips(clips, sentences)
-        return format_messages(clips, sentences, sentences[-1].end)
+        transcribe(audio, deps.transcribe_client, workdir=deps.workdir,
+                   progress=_progress_reporter(message, deps), on_chunk=on_chunk)
     except InputError as e:
         return [str(e)]
     except BusyError as e:
         print(f"busy: {e}", file=sys.stderr)
-        return [BUSY]
+        return unsent + [BUSY]
     except QuotaError as e:
         print(f"quota: {e}", file=sys.stderr)
-        return [QUOTA]
+        return unsent + [QUOTA]
     except TranscriptionError:
-        return [NO_SPEECH]
-    except SelectionError:
-        return [SELECTION_FAILED]
+        return unsent + [NO_SPEECH]
     except Exception:  # noqa: BLE001
         traceback.print_exc(file=sys.stderr)
-        return [GENERIC]
+        return unsent + [GENERIC]
+    if found:
+        return unsent + [f"✅ تمام شد: {len(found)} پیشنهاد برش"]
+    last = failures[-1] if failures else None
+    if isinstance(last, BusyError):
+        return unsent + [BUSY]
+    if isinstance(last, QuotaError):
+        return unsent + [QUOTA]
+    if isinstance(last, SelectionError):
+        return unsent + [SELECTION_FAILED]
+    return unsent + ["هیچ برش مناسبی پیدا نشد."]
