@@ -30,7 +30,7 @@ def _split(audio: Path, workdir: Path, chunk_seconds: int) -> list[Path]:
     return sorted(out.glob("c*.mp3"))
 
 
-def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 600) -> list[Sentence]:
+def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 300) -> list[Sentence]:
     workdir = Path(workdir or tempfile.mkdtemp())
     result: list[Sentence] = []
     for i, chunk in enumerate(_split(audio, workdir, chunk_seconds)):
@@ -66,7 +66,9 @@ class GeminiClient:
     def __init__(self, api_key: str, model: str = None):
         from google import genai
         self._genai = genai
-        self._client = genai.Client(api_key=api_key)
+        from google.genai import types
+        self._client = genai.Client(
+            api_key=api_key, http_options=types.HttpOptions(timeout=180_000))
         self._models = [model] if model else models_from_env()
 
     def _ask(self, audio: Path, prompt: str) -> list[dict]:
@@ -83,13 +85,9 @@ class GeminiClient:
         return [d for d in data if isinstance(d, dict) and "text" in d] if isinstance(data, list) else []
 
     def transcribe_words(self, audio: Path):
-        rows = self._ask(audio, _PROMPT_WORDS)
-        if not rows:
-            return None
-        try:
-            return [Word(str(r["text"]), float(r["start"]), float(r["end"])) for r in rows]
-        except (KeyError, TypeError, ValueError):
-            return None
+        # Word-level output is too long for the API (connections drop), so the
+        # real client uses sentence-level times only; see transcribe_sentences.
+        return None
 
     def transcribe_sentences(self, audio: Path):
         rows = self._ask(audio, _PROMPT_SENT)

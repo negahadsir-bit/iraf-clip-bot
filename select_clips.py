@@ -46,7 +46,9 @@ def select_clips(sentences: list[Sentence], rules: str, client) -> list[Clip]:
 class GeminiTextClient:
     def __init__(self, api_key: str, model: str = None):
         from google import genai
-        self._client = genai.Client(api_key=api_key)
+        from google.genai import types
+        self._client = genai.Client(
+            api_key=api_key, http_options=types.HttpOptions(timeout=180_000))
         self._models = [model] if model else models_from_env()
 
     def generate_json(self, prompt: str) -> list[dict]:

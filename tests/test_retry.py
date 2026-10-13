@@ -29,6 +29,16 @@ class RetryTests(unittest.TestCase):
             call_with_fallback(Flaky(fail_models=["m1", "m2"]), ["m1", "m2"], attempts=2,
                                sleep=lambda s: None)
 
+    def test_dropped_connection_counts_as_busy(self):
+        calls = []
+
+        def drop(model):
+            calls.append(model)
+            if len(calls) == 1:
+                raise RuntimeError("httpcore.RemoteProtocolError: Server disconnected without sending a response.")
+            return "ok"
+        self.assertEqual(call_with_fallback(drop, ["m1"], attempts=2, sleep=lambda s: None), "ok")
+
     def test_quota_and_other_errors_propagate_immediately(self):
         def boom(model):
             raise RuntimeError("429 RESOURCE_EXHAUSTED")

@@ -1,7 +1,8 @@
 import os
 import time
 
-_BUSY_MARKERS = ("503", "UNAVAILABLE", "500 INTERNAL", "high demand", "overloaded")
+_BUSY_MARKERS = ("503", "UNAVAILABLE", "500 INTERNAL", "high demand", "overloaded",
+                 "disconnected", "timed out", "Timeout", "ReadError", "ConnectError")
 
 
 class BusyError(Exception):
