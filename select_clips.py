@@ -1,5 +1,6 @@
 import json
 import sys
+from categories import parse_cats
 from models import Clip, Sentence
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 
@@ -18,8 +19,9 @@ def _task(want: int) -> str:
         "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر، و تا جای ممکن در "
         f"همان {want} مورد پر کن، پخش‌شده در کل مصاحبه (نه فقط ابتدا)؛ اگر چیز خوبی نیست "
         "فهرست خالی برگردان. هر جمله با شماره‌ی [n] آمده. فقط JSON برگردان: "
-        '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی"}]. '
-        "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from.")
+        '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی", "cats": ["..."]}]. '
+        "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from. cats یک یا چند مورد از این‌هاست: "
+        "«احساسی عرفانی»، «اجتماعی»، «سرگرمی و فان»، «سیاسی».")
 
 
 def _dur(sentences: list[Sentence], a: int, b: int) -> float:
@@ -63,7 +65,8 @@ def select_clips(sentences: list[Sentence], rules: str, client,
             b += 1  # the model cannot see durations: grow short picks sentence by sentence
         while _dur(sentences, a, b) > MAX_DUR and b > a:
             b -= 1
-        c = Clip(rank, sentences[a].start, sentences[b].end, reason)
+        c = Clip(rank, sentences[a].start, sentences[b].end, reason,
+                 " ".join(s.text for s in sentences[a:b + 1]), parse_cats(d.get("cats")))
         if not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):
             drops["bad_length"] += 1
             continue

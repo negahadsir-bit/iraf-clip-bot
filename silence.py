@@ -2,6 +2,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from dataclasses import replace
+
 from models import Clip
 
 MIN_CLIP = 20.0
@@ -47,5 +49,5 @@ def snap_to_silence(clips: list[Clip], silences: list[tuple[float, float]],
         end = c.end if end is None else end
         if end - start < MIN_CLIP:
             start, end = c.start, c.end
-        out.append(Clip(c.rank, start, end, c.reason))
+        out.append(replace(c, start=start, end=end))
     return out

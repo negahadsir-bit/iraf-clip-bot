@@ -4,6 +4,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from buttons import handle_callback
 from config import ConfigError, load_config
 from pipeline import Deps, process
 from telegram_api import Telegram, TelegramError
@@ -17,6 +18,9 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None) -> int:
     (acknowledged to Telegram) right after the 'received' reply, before the
     slow work, so a crashed run never re-processes the same file."""
     nxt = update["update_id"] + 1
+    if update.get("callback_query"):
+        handle_callback(update["callback_query"], cfg, tg)
+        return nxt
     msg = update.get("message")
     if not msg or msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
         return nxt
