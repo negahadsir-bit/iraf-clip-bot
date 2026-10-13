@@ -1,4 +1,5 @@
 import sys
+import threading
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,17 +39,19 @@ class _Progress:
         self._chat_id = message.get("chat", {}).get("id")
         self._tg = deps.tg
         self._msg_id = None
+        self._lock = threading.Lock()
 
     def _show(self, text: str) -> None:
         if self._chat_id is None or self._tg is None:
             return
-        try:
-            if self._msg_id is None:
-                self._msg_id = self._tg.send_message(self._chat_id, text)
-            else:
-                self._tg.edit_message(self._chat_id, self._msg_id, text)
-        except Exception:  # noqa: BLE001
-            pass
+        with self._lock:  # chunks finish on several threads
+            try:
+                if self._msg_id is None:
+                    self._msg_id = self._tg.send_message(self._chat_id, text)
+                else:
+                    self._tg.edit_message(self._chat_id, self._msg_id, text)
+            except Exception:  # noqa: BLE001
+                pass
 
     def __call__(self, done: int, total: int) -> None:
         print(f"transcribed chunk {done}/{total}", file=sys.stderr, flush=True)

@@ -2,7 +2,9 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from models import Sentence, Word
@@ -43,7 +45,7 @@ def _one(client, chunk: Path) -> list[Sentence]:
 
 def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 300,
                progress=None, on_skip=None, sleep=time.sleep,
-               retry_wait: float = 30.0) -> list[Sentence]:
+               retry_wait: float = 30.0, workers: int = 3) -> list[Sentence]:
     """Transcribe in chunks. A chunk that stays busy is retried once at the end
     and then skipped (reported via on_skip) so one bad chunk never loses the rest."""
     workdir = Path(workdir or tempfile.mkdtemp())
@@ -52,20 +54,30 @@ def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 3
     busy: list[int] = []
     last_busy = None
     finished = 0
+    lock = threading.Lock()
 
     def finish():
         nonlocal finished
-        finished += 1
+        with lock:
+            finished += 1
+            n = finished
         if progress:
-            progress(finished, len(chunks))
+            progress(n, len(chunks))
 
-    for i, chunk in enumerate(chunks):
+    def work(i):
         try:
-            done[i] = _one(client, chunk)
+            done[i] = _one(client, chunks[i])
             finish()
         except BusyError as e:
-            busy.append(i)
-            last_busy = e
+            with lock:
+                busy.append(i)
+                nonlocal last_busy
+                last_busy = e
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for f in [pool.submit(work, i) for i in range(len(chunks))]:
+            f.result()  # re-raises QuotaError and other hard failures
+    busy.sort()
     if busy:
         sleep(retry_wait)
     for i in busy:
