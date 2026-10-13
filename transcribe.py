@@ -2,10 +2,11 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from models import Sentence, Word
-from retry import QuotaError, call_with_fallback, models_from_env
+from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 from timeline import fix_word_times, words_to_sentences
 
 
@@ -26,29 +27,59 @@ def _split(audio: Path, workdir: Path, chunk_seconds: int) -> list[Path]:
     return sorted(out.glob("c*.mp3"))
 
 
+def _one(client, chunk: Path) -> list[Sentence]:
+    try:
+        words = client.transcribe_words(chunk)
+        if words:
+            return words_to_sentences(fix_word_times(words))
+        return client.transcribe_sentences(chunk) or []
+    except BusyError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            raise QuotaError(str(e)) from e
+        raise
+
+
 def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 300,
-               progress=None, on_chunk=None) -> list[Sentence]:
+               progress=None, on_skip=None, sleep=time.sleep,
+               retry_wait: float = 30.0) -> list[Sentence]:
+    """Transcribe in chunks. A chunk that stays busy is retried once at the end
+    and then skipped (reported via on_skip) so one bad chunk never loses the rest."""
     workdir = Path(workdir or tempfile.mkdtemp())
-    result: list[Sentence] = []
     chunks = _split(audio, workdir, chunk_seconds)
+    done: dict[int, list[Sentence]] = {}
+    busy: list[int] = []
+    last_busy = None
+    finished = 0
+
+    def finish():
+        nonlocal finished
+        finished += 1
+        if progress:
+            progress(finished, len(chunks))
+
     for i, chunk in enumerate(chunks):
         try:
-            words = client.transcribe_words(chunk)
-            if words:
-                sentences = words_to_sentences(fix_word_times(words))
-            else:
-                sentences = client.transcribe_sentences(chunk) or []
-        except Exception as e:  # noqa: BLE001
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                raise QuotaError(str(e)) from e
-            raise
-        off = i * chunk_seconds
-        shifted = [Sentence(s.text, s.start + off, s.end + off) for s in sentences]
-        result += shifted
-        if on_chunk and shifted:
-            on_chunk(shifted)
-        if progress:
-            progress(i + 1, len(chunks))
+            done[i] = _one(client, chunk)
+            finish()
+        except BusyError as e:
+            busy.append(i)
+            last_busy = e
+    if busy:
+        sleep(retry_wait)
+    for i in busy:
+        try:
+            done[i] = _one(client, chunks[i])
+        except BusyError as e:
+            last_busy = e
+            if on_skip:
+                on_skip(i + 1, len(chunks))
+        finish()
+    if busy and not any(done.values()):
+        raise last_busy
+    result = [Sentence(s.text, s.start + i * chunk_seconds, s.end + i * chunk_seconds)
+              for i in sorted(done) for s in done[i]]
     if not result:
         raise TranscriptionError("empty transcript")
     return result

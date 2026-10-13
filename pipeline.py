@@ -62,12 +62,14 @@ def process(message: dict, deps: Deps) -> list[str]:
     chat_id = message.get("chat", {}).get("id")
     progress = _Progress(message, deps)
     unsent: list[str] = []
+    skipped: list[int] = []
     try:
         ref = resolve_input(message)
         src = fetch_input(ref, deps.tg, deps.workdir)
         audio = to_audio(src, deps.workdir / "audio.mp3")
         sentences = transcribe(audio, deps.transcribe_client, workdir=deps.workdir,
-                               progress=progress)
+                               progress=progress,
+                               on_skip=lambda i, n: skipped.append(i))
         progress.selecting()
         clips = snap_clips(select_clips(sentences, deps.rules, deps.select_client), sentences)
         for clip in clips:
@@ -78,7 +80,11 @@ def process(message: dict, deps: Deps) -> list[str]:
                 unsent.append(text)
         if not clips:
             return ["هیچ برش مناسبی پیدا نشد."]
-        return unsent + [f"✅ تمام شد: {len(clips)} پیشنهاد برش"]
+        done = f"✅ تمام شد: {len(clips)} پیشنهاد برش"
+        if skipped:
+            nums = "، ".join(str(i) for i in sorted(skipped))
+            done += f"\n⚠ تکه {nums} (هر کدام ۵ دقیقه) به‌خاطر شلوغی Gemini رد شد."
+        return unsent + [done]
     except InputError as e:
         return [str(e)]
     except BusyError as e:
