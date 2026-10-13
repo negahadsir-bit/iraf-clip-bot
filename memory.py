@@ -92,11 +92,11 @@ def examples_note(path: Path | None, cats, feedback_path: Path | None = None) ->
             parts.append("برش‌هایی که به تجربه‌ی کاربر وایرال شدند (علامت top را بیشتر از روی این‌ها بده):\n"
                          + "\n".join(f"- «{t}»" for t in viral))
         if flat:
-            parts.append("برش‌هایی که به تجربه‌ی کاربر وایرال نشدند:\n" + "\n".join(f"- «{t}»" for t in flat))
+            parts.append("برش‌هایی که به تجربه‌ی کاربر وایرال نشدند (اولویت پایین‌تر بده، اما حذفشان نکن؛ ممکن است جای دیگری به کار بیایند):\n" + "\n".join(f"- «{t}»" for t in flat))
         if liked:
             parts.append("برش‌هایی که کاربر پسندید (مثل این‌ها بساز):\n" + "\n".join(f"- «{t}»" for t in liked))
         if disliked:
-            parts.append("برش‌هایی که کاربر نپسندید (شبیه این‌ها نساز):\n" + "\n".join(f"- «{t}»" for t in disliked))
+            parts.append("برش‌هایی که کاربر نپسندید (اولویت پایین‌تر بده، اما اگر مناسب بودند حذفشان نکن):\n" + "\n".join(f"- «{t}»" for t in disliked))
         if picks:
             parts.append("پیشنهادهای قبلی همین دسته:\n" + "\n".join(f"- «{t}»" for t in picks))
         if parts:
