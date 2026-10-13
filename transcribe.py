@@ -10,7 +10,7 @@ from pathlib import Path
 
 from models import Sentence, Word
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
-from timeline import fix_word_times, parse_seconds, words_to_sentences
+from timeline import fix_word_times, parse_seconds, retime, words_to_sentences
 
 
 class TranscriptionError(Exception):
@@ -28,6 +28,16 @@ def _split(audio: Path, workdir: Path, chunk_seconds: int) -> list[Path]:
     if r.returncode != 0:
         raise TranscriptionError("ffmpeg split failed")
     return sorted(out.glob("c*.mp3"))
+
+
+def audio_seconds(path: Path) -> float:
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
+         "default=nw=1:nk=1", str(path)], capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        raise TranscriptionError("ffprobe failed") from None
 
 
 def _one(client, chunk: Path) -> list[Sentence]:
@@ -152,4 +162,4 @@ class GeminiClient:
                 out.append(Sentence(str(r["text"]), parse_seconds(r["start"]), parse_seconds(r["end"])))
             except (KeyError, TypeError, ValueError):
                 continue
-        return out
+        return retime(out, audio_seconds(audio))

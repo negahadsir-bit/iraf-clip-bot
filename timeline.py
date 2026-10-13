@@ -70,3 +70,32 @@ def parse_seconds(value) -> float:
     for p in parts:
         total = total * 60 + float(p)
     return total
+
+
+def retime(sentences: list[Sentence], duration: float, tolerance: float = 15.0) -> list[Sentence]:
+    """Make sentence times consistent inside one chunk of known duration.
+
+    Model timestamps are often non-monotonic or on the wrong scale. Estimate each
+    start from the words spoken before it, keep the model's start only when it
+    agrees with that estimate, and force monotonic starts; each sentence then ends
+    where the next begins (the last one at the model's end if sane, else the chunk end)."""
+    if not sentences:
+        return []
+    counts = [max(1, len(s.text.split())) for s in sentences]
+    total = sum(counts)
+    starts, before, prev = [], 0, 0.0
+    for s, c in zip(sentences, counts):
+        est = duration * before / total
+        g = s.start
+        start = g if abs(g - est) <= tolerance else est
+        start = min(max(start, prev), duration)
+        starts.append(start)
+        prev, before = start, before + c
+    out = []
+    for i, s in enumerate(sentences):
+        if i + 1 < len(sentences):
+            end = starts[i + 1]
+        else:
+            end = s.end if starts[i] < s.end <= duration else duration
+        out.append(Sentence(s.text, starts[i], min(max(end, starts[i] + 0.2), duration)))
+    return out
