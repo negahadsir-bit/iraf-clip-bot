@@ -1,4 +1,5 @@
 import json
+import sys
 from models import Clip, Sentence
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 from timeline import to_transcript
@@ -33,15 +34,28 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         raise SelectionError("not a list")
     end_of_episode = sentences[-1].end if sentences else 0.0
     clips = []
+    drops = {"out_of_range": 0, "too_short": 0, "too_long": 0}
     for d in raw:
         try:
             c = Clip(int(d["rank"]), float(d["start"]), float(d["end"]), str(d.get("reason", "")))
         except (KeyError, TypeError, ValueError, AttributeError):
             raise SelectionError("malformed item")
         dur = c.end - c.start
-        if c.end <= c.start or not (0 <= c.start < end_of_episode) or not (MIN_DUR <= dur <= MAX_DUR):
+        if c.end <= c.start or not (0 <= c.start < end_of_episode):
+            drops["out_of_range"] += 1
+            continue
+        if dur < MIN_DUR:
+            drops["too_short"] += 1
+            continue
+        if dur > MAX_DUR:
+            drops["too_long"] += 1
             continue
         clips.append(c)
+    print(f"selection: raw={len(raw)} kept={len(clips)} "
+          + " ".join(f"{k}={v}" for k, v in drops.items())
+          + f" episode_end={end_of_episode:.0f}s sentences={len(sentences)}", file=sys.stderr, flush=True)
+    print(f"selection raw json: {json.dumps(raw, ensure_ascii=False)[:1500]}",
+          file=sys.stderr, flush=True)
     clips.sort(key=lambda c: c.rank)
     return clips[:min(want, MAX_CLIPS)]
 
