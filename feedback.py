@@ -72,8 +72,12 @@ def handle_feedback(cb: dict, cfg, tg, path: Path | None) -> bool:
             save_feedback(path, good, cats, dialogue)
         except OSError:
             pass
-    _edit(tg, chat_id, msg, viral_keyboard(good, mask))
-    _answer(tg, cb, "ثبت شد؛ حالا وایرال بودنش؟")
+    if good:
+        _edit(tg, chat_id, msg, viral_keyboard(good, mask))
+        _answer(tg, cb, "ثبت شد؛ حالا وایرال بودنش؟")
+    else:  # a weak clip is obviously not viral: no second question
+        _edit(tg, chat_id, msg, {"inline_keyboard": [[{"text": "✅ ثبت شد 👎", "callback_data": DONE}]]})
+        _answer(tg, cb)
     return True
 
 
