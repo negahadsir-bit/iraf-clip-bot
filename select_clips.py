@@ -85,10 +85,25 @@ class GeminiTextClient:
         return json.loads(resp.text)
 
 
+class FallbackClient:
+    """Try the primary client; if it fails for any reason, use the secondary."""
+
+    def __init__(self, primary, secondary):
+        self.primary, self.secondary = primary, secondary
+
+    def generate_json(self, prompt: str):
+        try:
+            return self.primary.generate_json(prompt)
+        except Exception as e:  # noqa: BLE001
+            print(f"primary selection client failed ({type(e).__name__}); using fallback",
+                  file=sys.stderr, flush=True)
+            return self.secondary.generate_json(prompt)
+
+
 def make_select_client(env, gemini_key: str):
-    """DeepSeek when DEEPSEEK_API_KEY is set (non-empty), otherwise Gemini."""
+    """DeepSeek (falling back to Gemini) when DEEPSEEK_API_KEY is set, otherwise Gemini."""
     key = (env.get("DEEPSEEK_API_KEY") or "").strip()
     if key:
         from deepseek import DeepSeekTextClient
-        return DeepSeekTextClient(key)
+        return FallbackClient(DeepSeekTextClient(key), GeminiTextClient(gemini_key))
     return GeminiTextClient(gemini_key)
