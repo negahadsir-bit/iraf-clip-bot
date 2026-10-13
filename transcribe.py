@@ -10,7 +10,7 @@ from pathlib import Path
 
 from models import Sentence, Word
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
-from timeline import fix_word_times, words_to_sentences
+from timeline import fix_word_times, parse_seconds, words_to_sentences
 
 
 class TranscriptionError(Exception):
@@ -109,8 +109,10 @@ _PROMPT_WORDS = (
     '[{"text": "...", "start": ثانیه, "end": ثانیه}, ...] با زمان واقعی هر کلمه از ابتدای فایل. '
     "علائم نقطه، ؟ و ! را در پایان جمله‌ها بگذار.")
 _PROMPT_SENT = (
-    "این فایل صوتی فارسی را جمله به جمله بنویس. فقط JSON برگردان: "
-    '[{"text": "...", "start": ثانیه, "end": ثانیه}, ...] با زمان شروع و پایان هر جمله از ابتدای فایل.')
+    "این فایل صوتی فارسی را جمله به جمله بنویس؛ هر جمله کوتاه باشد (حداکثر حدود ۱۵ کلمه) و جمله‌ی طولانی را "
+    "به چند جمله بشکن. فقط JSON برگردان: "
+    '[{"text": "...", "start": ثانیه, "end": ثانیه}, ...] با زمان دقیق شروع و پایان هر جمله از ابتدای فایل، '
+    "به‌صورت عدد ثانیه‌ی اعشاری (مثلاً 83.5) و نه دقیقه:ثانیه.")
 
 
 class GeminiClient:
@@ -147,7 +149,7 @@ class GeminiClient:
         out = []
         for r in rows:
             try:
-                out.append(Sentence(str(r["text"]), float(r["start"]), float(r["end"])))
+                out.append(Sentence(str(r["text"]), parse_seconds(r["start"]), parse_seconds(r["end"])))
             except (KeyError, TypeError, ValueError):
                 continue
         return out

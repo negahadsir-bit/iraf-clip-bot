@@ -54,3 +54,19 @@ def to_transcript(sentences: list[Sentence]) -> str:
         sec = int(s.start)
         lines.append(f"{sec // 60}:{sec % 60:02d} {s.text}")
     return "\n".join(lines)
+
+
+_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+def parse_seconds(value) -> float:
+    """Seconds from a number, "12.5", "01:23" or "1:02:03.5" (models mix formats)."""
+    if isinstance(value, bool) or value is None:
+        raise ValueError("no time")
+    if isinstance(value, (int, float)):
+        return float(value)
+    parts = str(value).translate(_DIGITS).strip().replace(",", ".").split(":")
+    total = 0.0
+    for p in parts:
+        total = total * 60 + float(p)
+    return total
