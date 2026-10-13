@@ -8,6 +8,7 @@ from formatting import format_clip
 from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
+from silence import detect_silences, snap_to_silence
 from transcribe import TranscriptionError, transcribe
 
 QUOTA = "سهمیه‌ی رایگان Gemini پر شده؛ کمی بعد دوباره بفرست."
@@ -74,6 +75,10 @@ def process(message: dict, deps: Deps) -> list[str]:
                                on_skip=lambda i, n: skipped.append(i))
         progress.selecting()
         clips = select_clips(sentences, deps.rules, deps.select_client)
+        try:  # timestamps are approximate: pull edges to real pauses in the audio
+            clips = snap_to_silence(clips, detect_silences(audio))
+        except Exception as e:  # noqa: BLE001 - never lose clips over a refinement step
+            print(f"silence snapping skipped: {type(e).__name__}", file=sys.stderr, flush=True)
         for clip in clips:
             text = format_clip(clip, sentences)
             try:
