@@ -27,6 +27,12 @@ def save_feedback(path: Path, good: bool, cats, text: str) -> None:
                    "cats": [CATS[i] for i in cats if 0 <= i < len(CATS)], "text": text[:CLIP_CHARS]})
 
 
+def save_viral(path: Path, viral: bool, cats, text: str) -> None:
+    """The user's own experience-based call: did this clip have viral potential or not."""
+    _append(path, {"ts": int(time.time()), "viral": bool(viral),
+                   "cats": [CATS[i] for i in cats if 0 <= i < len(CATS)], "text": text[:CLIP_CHARS]})
+
+
 def _read(path: Path | None) -> list[dict]:
     if path is None:
         return []
@@ -50,6 +56,11 @@ def _verdicts(feedback: list[dict], cat: str, good: bool) -> list[str]:
             if e.get("good") is good and cat in e["cats"] and e.get("text")]
 
 
+def _virality(feedback: list[dict], cat: str, viral: bool) -> list[str]:
+    return [str(e["text"]) for e in reversed(feedback)
+            if e.get("viral") is viral and cat in e["cats"] and e.get("text")]
+
+
 def _picks(interviews: list[dict], cat: str, limit: int) -> list[str]:
     texts: list[str] = []
     for e in reversed(interviews):
@@ -70,10 +81,18 @@ def examples_note(path: Path | None, cats, feedback_path: Path | None = None) ->
     for i in sorted(set(cats)):
         if not 0 <= i < len(CATS):
             continue
+        viral = _virality(feedback, CATS[i], True)[:PER_CAT]
+        flat = _virality(feedback, CATS[i], False)[:DISLIKED]
         liked = _verdicts(feedback, CATS[i], True)[:PER_CAT]
         disliked = _verdicts(feedback, CATS[i], False)[:DISLIKED]
-        picks = _picks(interviews, CATS[i], PER_CAT - len(liked)) if len(liked) < PER_CAT else []
+        known = len(viral) + len(liked)
+        picks = _picks(interviews, CATS[i], PER_CAT - known) if known < PER_CAT else []
         parts = []
+        if viral:
+            parts.append("برش‌هایی که به تجربه‌ی کاربر وایرال شدند (علامت top را بیشتر از روی این‌ها بده):\n"
+                         + "\n".join(f"- «{t}»" for t in viral))
+        if flat:
+            parts.append("برش‌هایی که به تجربه‌ی کاربر وایرال نشدند:\n" + "\n".join(f"- «{t}»" for t in flat))
         if liked:
             parts.append("برش‌هایی که کاربر پسندید (مثل این‌ها بساز):\n" + "\n".join(f"- «{t}»" for t in liked))
         if disliked:
