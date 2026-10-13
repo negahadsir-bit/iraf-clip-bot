@@ -12,16 +12,18 @@ from telegram_api import Telegram, TelegramError
 
 BUDGET_SECONDS = 5 * 60
 MEMORY = Path(__file__).parent / "memory" / "labels.jsonl"
+FEEDBACK = MEMORY.parent / "feedback.jsonl"
 
 
-def handle_update(update: dict, cfg, tg, process_fn, commit=None) -> int:
+def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=None) -> int:
     """Handle one update; returns next offset. A file/link is first answered with the
     category question (nothing slow happens yet). Pressing «شروع» runs the work; the
     offset is committed right before that, so a crashed run never repeats the same file."""
     nxt = update["update_id"] + 1
     if update.get("callback_query"):
         handle_callback(update["callback_query"], cfg, tg, process_fn,
-                        commit=(lambda: commit(nxt)) if commit else None)
+                        commit=(lambda: commit(nxt)) if commit else None,
+                        feedback_path=feedback_path)
         return nxt
     msg = update.get("message")
     if not msg or msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
@@ -58,7 +60,7 @@ def main() -> int:
             continue
         for u in updates:
             with tempfile.TemporaryDirectory() as d:
-                deps = Deps(tg, t_client, s_client, Path(d), rules, memory=MEMORY)
+                deps = Deps(tg, t_client, s_client, Path(d), rules, memory=MEMORY, feedback=FEEDBACK)
 
                 def commit(o):
                     nonlocal offset
@@ -68,7 +70,8 @@ def main() -> int:
                     except TelegramError:
                         pass
 
-                offset = handle_update(u, cfg, tg, lambda m, cats: process(m, deps, cats), commit=commit)
+                offset = handle_update(u, cfg, tg, lambda m, cats: process(m, deps, cats), commit=commit,
+                                       feedback_path=FEEDBACK)
     return 0
 
 

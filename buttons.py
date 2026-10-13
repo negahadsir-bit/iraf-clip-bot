@@ -1,4 +1,5 @@
 from categories import CATS
+from feedback import handle_feedback
 
 GO = "go"
 MARK = "✅ "
@@ -24,9 +25,11 @@ def selected_from(markup: dict | None) -> set[int]:
     return out
 
 
-def handle_callback(cb: dict, cfg, tg, process_fn, commit=None) -> None:
+def handle_callback(cb: dict, cfg, tg, process_fn, commit=None, feedback_path=None) -> None:
     """Toggle a category, or on «شروع» run the pending file (the question message is a
     reply to it, so Telegram hands the original message back to us: no stored state)."""
+    if handle_feedback(cb, cfg, tg, feedback_path):
+        return
     msg = cb.get("message") or {}
     chat_id = msg.get("chat", {}).get("id")
     if chat_id not in cfg.allowed_chat_ids:
@@ -42,6 +45,10 @@ def handle_callback(cb: dict, cfg, tg, process_fn, commit=None) -> None:
             pass
         return
     if data != GO:
+        try:
+            tg.answer_callback(cb["id"])  # e.g. the already-done marker: just stop the spinner
+        except Exception:  # noqa: BLE001
+            pass
         return
     if commit:
         commit()

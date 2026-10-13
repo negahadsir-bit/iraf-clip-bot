@@ -4,6 +4,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
+from feedback import clip_keyboard
 from formatting import format_clip
 from categories import rules_for
 from memory import examples_note, save_interview
@@ -29,6 +30,7 @@ class Deps:
     workdir: Path
     rules: str
     memory: Path | None = None
+    feedback: Path | None = None
 
 
 def _bar(done: int, total: int, width: int = 10) -> str:
@@ -79,7 +81,7 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
                                on_skip=lambda i, n: skipped.append(i))
         progress.selecting()
         try:
-            examples = examples_note(deps.memory, cats)
+            examples = examples_note(deps.memory, cats, deps.feedback)
         except Exception:  # noqa: BLE001 - learning is a bonus, never a blocker
             examples = ""
         clips = select_clips(sentences, rules_for(deps.rules, cats), deps.select_client, focus=cats,
@@ -101,7 +103,7 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
         for clip in clips:
             text = format_clip(clip, sentences)
             try:
-                deps.tg.send_message(chat_id, text)
+                deps.tg.send_message(chat_id, text, reply_markup=clip_keyboard(cats))
             except Exception:  # noqa: BLE001 - keep the clip, return it at the end
                 unsent.append(text)
         if not clips:
