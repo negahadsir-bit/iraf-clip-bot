@@ -4,6 +4,8 @@ on:
 concurrency:
   group: bot
   cancel-in-progress: false
+permissions:
+  contents: write
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -21,3 +23,14 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ALLOWED_CHAT_IDS: ${{ secrets.ALLOWED_CHAT_IDS }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      - name: Save learned examples
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain memory)" ]; then
+            git config user.name "clip-bot"
+            git config user.email "clip-bot@users.noreply.github.com"
+            git add memory
+            git commit -m "memory: save labelled interview"
+            git pull --rebase -q || true
+            git push || true
+          fi
