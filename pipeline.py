@@ -26,16 +26,27 @@ class Deps:
     rules: str
 
 
+def _bar(done: int, total: int, width: int = 10) -> str:
+    filled = round(width * done / total)
+    return "▓" * filled + "░" * (width - filled)
+
+
 def _progress_reporter(message: dict, deps: Deps):
     chat_id = message.get("chat", {}).get("id")
+    state = {"msg_id": None}
 
     def report(done: int, total: int) -> None:
         print(f"transcribed chunk {done}/{total}", file=sys.stderr, flush=True)
-        if chat_id is not None and deps.tg is not None and done % 3 == 0 and done < total:
-            try:
-                deps.tg.send_message(chat_id, f"پیشرفت: تکه {done} از {total}")
-            except Exception:  # noqa: BLE001 - progress is best effort
-                pass
+        if chat_id is None or deps.tg is None:
+            return
+        text = f"⏳ {_bar(done, total)} {round(100 * done / total)}%  (تکه {done} از {total})"
+        try:
+            if state["msg_id"] is None:
+                state["msg_id"] = deps.tg.send_message(chat_id, text)
+            else:
+                deps.tg.edit_message(chat_id, state["msg_id"], text)
+        except Exception:  # noqa: BLE001 - progress is best effort
+            pass
     return report
 
 

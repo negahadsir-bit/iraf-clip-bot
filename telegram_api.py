@@ -33,8 +33,12 @@ class Telegram:
             payload["offset"] = offset
         return self._call("getUpdates", payload, timeout=timeout + 15)
 
-    def send_message(self, chat_id: int, text: str) -> None:
-        self._call("sendMessage", {"chat_id": chat_id, "text": text})
+    def send_message(self, chat_id: int, text: str) -> int:
+        return self._call("sendMessage", {"chat_id": chat_id, "text": text})["message_id"]
+
+    def edit_message(self, chat_id: int, message_id: int, text: str) -> None:
+        self._call("editMessageText",
+                   {"chat_id": chat_id, "message_id": message_id, "text": text})
 
     def get_file_path(self, file_id: str) -> str:
         return self._call("getFile", {"file_id": file_id})["file_path"]
