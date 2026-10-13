@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -68,11 +69,15 @@ def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 3
         try:
             done[i] = _one(client, chunks[i])
             finish()
-        except BusyError as e:
+        except QuotaError:
+            raise
+        except Exception as e:  # noqa: BLE001 - one bad chunk must not lose the rest
+            print(f"chunk {i + 1} failed: {type(e).__name__}: {str(e)[:200]}",
+                  file=sys.stderr, flush=True)
             with lock:
                 busy.append(i)
                 nonlocal last_busy
-                last_busy = e
+                last_busy = e if isinstance(e, BusyError) else BusyError(str(e))
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for f in [pool.submit(work, i) for i in range(len(chunks))]:
@@ -83,8 +88,10 @@ def transcribe(audio: Path, client, workdir: Path = None, chunk_seconds: int = 3
     for i in busy:
         try:
             done[i] = _one(client, chunks[i])
-        except BusyError as e:
-            last_busy = e
+        except QuotaError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            last_busy = e if isinstance(e, BusyError) else BusyError(str(e))
             if on_skip:
                 on_skip(i + 1, len(chunks))
         finish()
