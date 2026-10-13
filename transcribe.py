@@ -5,12 +5,8 @@ import tempfile
 from pathlib import Path
 
 from models import Sentence, Word
-from retry import call_with_fallback, models_from_env
+from retry import QuotaError, call_with_fallback, models_from_env
 from timeline import fix_word_times, words_to_sentences
-
-
-class QuotaError(Exception):
-    pass
 
 
 class TranscriptionError(Exception):

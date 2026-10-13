@@ -1,6 +1,6 @@
 import json
 from models import Clip, Sentence
-from retry import BusyError, call_with_fallback, models_from_env
+from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 from timeline import to_transcript
 
 MAX_CLIPS = 12
@@ -22,7 +22,7 @@ def select_clips(sentences: list[Sentence], rules: str, client) -> list[Clip]:
     prompt = f"{rules}\n\n{_TASK}\n\nمتن با زمان (دقیقه:ثانیه):\n{to_transcript(sentences)}"
     try:
         raw = client.generate_json(prompt)
-    except BusyError:
+    except (BusyError, QuotaError):
         raise
     except Exception as e:  # noqa: BLE001
         raise SelectionError(str(e)) from e

@@ -1,5 +1,5 @@
 import unittest
-from retry import call_with_fallback, BusyError
+from retry import call_with_fallback, BusyError, QuotaError
 
 
 class Flaky:
@@ -60,12 +60,39 @@ class RetryTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GEMINI_MODELS": "a, b"}, clear=True):
             self.assertEqual(models_from_env(), ["a", "b"])
 
-    def test_quota_and_other_errors_propagate_immediately(self):
+    def test_per_minute_rate_limit_waits_retry_delay_then_succeeds(self):
+        calls, sleeps = [], []
+
+        def fn(model):
+            calls.append(model)
+            if len(calls) == 1:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED {'retryDelay': '11s', 'quotaId': 'PerMinute'}")
+            return "ok"
+        self.assertEqual(call_with_fallback(fn, ["m1"], attempts=3, sleep=sleeps.append), "ok")
+        self.assertEqual(calls, ["m1", "m1"])
+        self.assertTrue(11 <= sleeps[0] <= 13)
+
+    def test_daily_quota_moves_to_next_model_without_waiting(self):
+        sleeps = []
+
+        def fn(model):
+            if model == "m1":
+                raise RuntimeError("429 RESOURCE_EXHAUSTED quotaId GenerateRequestsPerDayPerProject")
+            return "ok"
+        self.assertEqual(call_with_fallback(fn, ["m1", "m2"], attempts=3, sleep=sleeps.append), "ok")
+        self.assertEqual(sleeps, [])
+
+    def test_all_models_out_of_quota_raises_quota_error(self):
+        def fn(model):
+            raise RuntimeError("429 RESOURCE_EXHAUSTED PerDay")
+        with self.assertRaises(QuotaError):
+            call_with_fallback(fn, ["m1", "m2"], attempts=2, sleep=lambda s: None)
+
+    def test_other_errors_propagate_immediately(self):
         def boom(model):
-            raise RuntimeError("429 RESOURCE_EXHAUSTED")
-        with self.assertRaises(RuntimeError) as cm:
+            raise ValueError("bad request 400")
+        with self.assertRaises(ValueError):
             call_with_fallback(boom, ["m1", "m2"], attempts=3, sleep=lambda s: None)
-        self.assertNotIsInstance(cm.exception, BusyError)
 
 
 if __name__ == "__main__":

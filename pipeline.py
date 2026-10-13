@@ -5,10 +5,10 @@ from pathlib import Path
 
 from formatting import format_messages
 from media import InputError, fetch_input, resolve_input, to_audio
-from retry import BusyError
+from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
 from snap import snap_clips
-from transcribe import QuotaError, TranscriptionError, transcribe
+from transcribe import TranscriptionError, transcribe
 
 QUOTA = "سهمیه‌ی رایگان Gemini پر شده؛ کمی بعد دوباره بفرست."
 NO_SPEECH = "هیچ گفتاری در فایل پیدا نشد."
@@ -37,9 +37,11 @@ def process(message: dict, deps: Deps) -> list[str]:
         return format_messages(clips, sentences, sentences[-1].end)
     except InputError as e:
         return [str(e)]
-    except BusyError:
+    except BusyError as e:
+        print(f"busy: {e}", file=sys.stderr)
         return [BUSY]
-    except QuotaError:
+    except QuotaError as e:
+        print(f"quota: {e}", file=sys.stderr)
         return [QUOTA]
     except TranscriptionError:
         return [NO_SPEECH]
