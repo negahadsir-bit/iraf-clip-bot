@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from formatting import format_clip
+from categories import rules_for
+from memory import examples_note, save_interview
 from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
@@ -26,6 +28,7 @@ class Deps:
     select_client: object
     workdir: Path
     rules: str
+    memory: Path | None = None
 
 
 def _bar(done: int, total: int, width: int = 10) -> str:
@@ -75,7 +78,12 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
                                progress=progress,
                                on_skip=lambda i, n: skipped.append(i))
         progress.selecting()
-        clips = select_clips(sentences, deps.rules, deps.select_client, focus=cats)
+        try:
+            examples = examples_note(deps.memory, cats)
+        except Exception:  # noqa: BLE001 - learning is a bonus, never a blocker
+            examples = ""
+        clips = select_clips(sentences, rules_for(deps.rules, cats), deps.select_client, focus=cats,
+                             examples=examples)
         try:  # re-listen to each clip's surroundings: short audio gives accurate times
             clips = refine_clips(clips, audio, audio_seconds(audio), deps.transcribe_client,
                                  deps.workdir)
@@ -85,6 +93,11 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
             clips = snap_to_silence(clips, detect_silences(audio))
         except Exception as e:  # noqa: BLE001 - never lose clips over a refinement step
             print(f"silence snapping skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+        if cats and clips and deps.memory is not None:
+            try:  # the user's own category choice teaches later runs
+                save_interview(deps.memory, cats, clips)
+            except Exception as e:  # noqa: BLE001
+                print(f"memory not saved: {type(e).__name__}", file=sys.stderr, flush=True)
         for clip in clips:
             text = format_clip(clip, sentences)
             try:

@@ -1,10 +1,12 @@
 import json
 import sys
+from dataclasses import replace
 from categories import focus_note
 from models import Clip, Sentence
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 
 MAX_CLIPS = 12
+EXTRA = 4  # ask for spare candidates: some get dropped (overlap, length)
 WORDS_PER_SEC = 2.6
 MIN_DUR, TARGET_MIN, MAX_DUR = 20.0, 35.0, 75.0
 
@@ -38,10 +40,10 @@ def _numbered(sentences: list[Sentence]) -> str:
 
 
 def select_clips(sentences: list[Sentence], rules: str, client,
-                 want: int = 10, focus=()) -> list[Clip]:
+                 want: int = 10, focus=(), examples: str = "") -> list[Clip]:
     note = focus_note(focus)
     prompt = "\n\n".join(part for part in (
-        rules, note, _task(want),
+        rules, note, examples, _task(want + EXTRA),
         f"جمله‌ها (شماره، زمان، متن):\n{_numbered(sentences)}") if part)
     try:
         raw = client.generate_json(prompt)
@@ -81,7 +83,7 @@ def select_clips(sentences: list[Sentence], rules: str, client,
           + f" sentences={n}", file=sys.stderr, flush=True)
     print(f"selection raw json: {json.dumps(raw, ensure_ascii=False)[:1500]}",
           file=sys.stderr, flush=True)
-    return clips[:min(want, MAX_CLIPS)]
+    return [replace(c, rank=i) for i, c in enumerate(clips[:min(want, MAX_CLIPS)], 1)]
 
 
 class GeminiTextClient:

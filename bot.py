@@ -11,6 +11,7 @@ from pipeline import Deps, process
 from telegram_api import Telegram, TelegramError
 
 BUDGET_SECONDS = 5 * 60
+MEMORY = Path(__file__).parent / "memory" / "labels.jsonl"
 
 
 def handle_update(update: dict, cfg, tg, process_fn, commit=None) -> int:
@@ -57,7 +58,7 @@ def main() -> int:
             continue
         for u in updates:
             with tempfile.TemporaryDirectory() as d:
-                deps = Deps(tg, t_client, s_client, Path(d), rules)
+                deps = Deps(tg, t_client, s_client, Path(d), rules, memory=MEMORY)
 
                 def commit(o):
                     nonlocal offset
