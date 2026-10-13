@@ -26,12 +26,26 @@ class Deps:
     rules: str
 
 
+def _progress_reporter(message: dict, deps: Deps):
+    chat_id = message.get("chat", {}).get("id")
+
+    def report(done: int, total: int) -> None:
+        print(f"transcribed chunk {done}/{total}", file=sys.stderr, flush=True)
+        if chat_id is not None and deps.tg is not None and done % 3 == 0 and done < total:
+            try:
+                deps.tg.send_message(chat_id, f"پیشرفت: تکه {done} از {total}")
+            except Exception:  # noqa: BLE001 - progress is best effort
+                pass
+    return report
+
+
 def process(message: dict, deps: Deps) -> list[str]:
     try:
         ref = resolve_input(message)
         src = fetch_input(ref, deps.tg, deps.workdir)
         audio = to_audio(src, deps.workdir / "audio.mp3")
-        sentences = transcribe(audio, deps.transcribe_client, workdir=deps.workdir)
+        sentences = transcribe(audio, deps.transcribe_client, workdir=deps.workdir,
+                               progress=_progress_reporter(message, deps))
         clips = select_clips(sentences, deps.rules, deps.select_client)
         clips = snap_clips(clips, sentences)
         return format_messages(clips, sentences, sentences[-1].end)
