@@ -8,7 +8,6 @@ from formatting import format_clip
 from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
-from snap import snap_clips
 from transcribe import TranscriptionError, transcribe
 
 QUOTA = "سهمیه‌ی رایگان Gemini پر شده؛ کمی بعد دوباره بفرست."
@@ -74,7 +73,7 @@ def process(message: dict, deps: Deps) -> list[str]:
                                progress=progress,
                                on_skip=lambda i, n: skipped.append(i))
         progress.selecting()
-        clips = snap_clips(select_clips(sentences, deps.rules, deps.select_client), sentences)
+        clips = select_clips(sentences, deps.rules, deps.select_client)
         for clip in clips:
             text = format_clip(clip, sentences)
             try:
