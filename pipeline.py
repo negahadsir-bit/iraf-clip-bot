@@ -5,7 +5,6 @@ from pathlib import Path
 
 from formatting import format_clip
 from media import InputError, fetch_input, resolve_input, to_audio
-from models import Clip
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
 from snap import snap_clips
@@ -32,57 +31,54 @@ def _bar(done: int, total: int, width: int = 10) -> str:
     return "▓" * filled + "░" * (width - filled)
 
 
-def _progress_reporter(message: dict, deps: Deps):
-    chat_id = message.get("chat", {}).get("id")
-    state = {"msg_id": None}
+class _Progress:
+    """One status message in the chat, edited as work advances (best effort)."""
 
-    def report(done: int, total: int) -> None:
-        print(f"transcribed chunk {done}/{total}", file=sys.stderr, flush=True)
-        if chat_id is None or deps.tg is None:
+    def __init__(self, message: dict, deps: Deps):
+        self._chat_id = message.get("chat", {}).get("id")
+        self._tg = deps.tg
+        self._msg_id = None
+
+    def _show(self, text: str) -> None:
+        if self._chat_id is None or self._tg is None:
             return
-        text = f"⏳ {_bar(done, total)} {round(100 * done / total)}%  (تکه {done} از {total})"
         try:
-            if state["msg_id"] is None:
-                state["msg_id"] = deps.tg.send_message(chat_id, text)
+            if self._msg_id is None:
+                self._msg_id = self._tg.send_message(self._chat_id, text)
             else:
-                deps.tg.edit_message(chat_id, state["msg_id"], text)
-        except Exception:  # noqa: BLE001 - progress is best effort
+                self._tg.edit_message(self._chat_id, self._msg_id, text)
+        except Exception:  # noqa: BLE001
             pass
-    return report
 
+    def __call__(self, done: int, total: int) -> None:
+        print(f"transcribed chunk {done}/{total}", file=sys.stderr, flush=True)
+        self._show(f"⏳ {_bar(done, total)} {round(100 * done / total)}%  (تکه {done} از {total})")
 
-PER_CHUNK = 2
+    def selecting(self) -> None:
+        self._show("✍️ متن کامل شد؛ در حال انتخاب بهترین برش‌ها…")
 
 
 def process(message: dict, deps: Deps) -> list[str]:
     chat_id = message.get("chat", {}).get("id")
-    found: list[Clip] = []
+    progress = _Progress(message, deps)
     unsent: list[str] = []
-    failures: list[Exception] = []
-
-    def on_chunk(sents):
-        try:
-            clips = snap_clips(select_clips(sents, deps.rules, deps.select_client,
-                                            want=PER_CHUNK), sents)
-        except (BusyError, QuotaError, SelectionError) as e:
-            print(f"selection skipped: {type(e).__name__}: {e}", file=sys.stderr)
-            failures.append(e)
-            return
-        for c in clips:
-            clip = Clip(len(found) + 1, c.start, c.end, c.reason)
-            found.append(clip)
-            text = format_clip(clip, sents)
-            try:
-                deps.tg.send_message(chat_id, text)
-            except Exception:  # noqa: BLE001 - keep the clip, return it at the end
-                unsent.append(text)
-
     try:
         ref = resolve_input(message)
         src = fetch_input(ref, deps.tg, deps.workdir)
         audio = to_audio(src, deps.workdir / "audio.mp3")
-        transcribe(audio, deps.transcribe_client, workdir=deps.workdir,
-                   progress=_progress_reporter(message, deps), on_chunk=on_chunk)
+        sentences = transcribe(audio, deps.transcribe_client, workdir=deps.workdir,
+                               progress=progress)
+        progress.selecting()
+        clips = snap_clips(select_clips(sentences, deps.rules, deps.select_client), sentences)
+        for clip in clips:
+            text = format_clip(clip, sentences)
+            try:
+                deps.tg.send_message(chat_id, text)
+            except Exception:  # noqa: BLE001 - keep the clip, return it at the end
+                unsent.append(text)
+        if not clips:
+            return ["هیچ برش مناسبی پیدا نشد."]
+        return unsent + [f"✅ تمام شد: {len(clips)} پیشنهاد برش"]
     except InputError as e:
         return [str(e)]
     except BusyError as e:
@@ -93,16 +89,8 @@ def process(message: dict, deps: Deps) -> list[str]:
         return unsent + [QUOTA]
     except TranscriptionError:
         return unsent + [NO_SPEECH]
+    except SelectionError:
+        return unsent + [SELECTION_FAILED]
     except Exception:  # noqa: BLE001
         traceback.print_exc(file=sys.stderr)
         return unsent + [GENERIC]
-    if found:
-        return unsent + [f"✅ تمام شد: {len(found)} پیشنهاد برش"]
-    last = failures[-1] if failures else None
-    if isinstance(last, BusyError):
-        return unsent + [BUSY]
-    if isinstance(last, QuotaError):
-        return unsent + [QUOTA]
-    if isinstance(last, SelectionError):
-        return unsent + [SELECTION_FAILED]
-    return unsent + ["هیچ برش مناسبی پیدا نشد."]
