@@ -33,8 +33,11 @@ class Telegram:
             payload["offset"] = offset
         return self._call("getUpdates", payload, timeout=timeout + 15)
 
-    def send_message(self, chat_id: int, text: str, reply_markup: dict | None = None) -> int:
+    def send_message(self, chat_id: int, text: str, reply_markup: dict | None = None,
+                     reply_to: int | None = None) -> int:
         payload = {"chat_id": chat_id, "text": text}
+        if reply_to is not None:
+            payload["reply_to_message_id"] = reply_to
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
         return self._call("sendMessage", payload)["message_id"]

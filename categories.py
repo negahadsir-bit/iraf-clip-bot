@@ -1,23 +1,18 @@
 CATS = ("احساسی عرفانی", "اجتماعی", "سرگرمی و فان", "سیاسی")
-_KEYS = (("احساس", "عرفان"), ("اجتماع",), ("سرگرم", "فان", "طنز"), ("سیاس",))
+_ABOUT = (
+    "دلتنگی، درد، غرور، معنویت، عرفان و لحظه‌های تکان‌دهنده",
+    "مسائل و دغدغه‌های مردم و جامعه، خانواده، فرهنگ و زندگی روزمره",
+    "طنز، خاطره‌ی بامزه، لحظه‌ی شاد و سرگرم‌کننده",
+    "موضع‌گیری و تحلیل سیاسی، تاریخ و مسائل کشور و منطقه",
+)
 
 
-def parse_cats(value) -> tuple[int, ...]:
-    """Map whatever the model returned (names, fragments or indexes) to category indexes."""
-    if isinstance(value, (str, int)):
-        value = [value]
-    if not isinstance(value, (list, tuple)):
-        return ()
-    out = []
-    for v in value:
-        idx = None
-        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < len(CATS):
-            idx = v
-        elif isinstance(v, str):
-            for i, keys in enumerate(_KEYS):
-                if any(k in v for k in keys):
-                    idx = i
-                    break
-        if idx is not None and idx not in out:
-            out.append(idx)
-    return tuple(out)
+def focus_note(selected) -> str:
+    """Prompt text telling the selector which kind of clips the user wants (empty = no focus)."""
+    picked = sorted({i for i in selected if 0 <= i < len(CATS)})
+    if not picked:
+        return ""
+    lines = "\n".join(f"- «{CATS[i]}»: {_ABOUT[i]}" for i in picked)
+    return ("کاربر برای این مصاحبه این دسته‌ها را مهم دانسته است:\n" + lines +
+            "\nبرش‌هایی را که از نظر حال‌وهوا و موضوع با این دسته‌ها می‌خوانند در اولویت بگذار "
+            "(بقیه‌ی قوانین سر جایش می‌ماند و باز هم کیفیت از تعداد مهم‌تر است).")

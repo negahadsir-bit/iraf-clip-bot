@@ -22,4 +22,3 @@ class Clip:
     end: float
     reason: str
     text: str = ""
-    cats: tuple = ()

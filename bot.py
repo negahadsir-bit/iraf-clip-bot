@@ -4,32 +4,34 @@ import tempfile
 import time
 from pathlib import Path
 
-from buttons import handle_callback
+from buttons import ASK, handle_callback, keyboard
 from config import ConfigError, load_config
+from media import InputError, resolve_input
 from pipeline import Deps, process
 from telegram_api import Telegram, TelegramError
 
-RECEIVED = "دریافت شد؛ در حال بررسی… (چند دقیقه طول می‌کشد)"
 BUDGET_SECONDS = 5 * 60
 
 
 def handle_update(update: dict, cfg, tg, process_fn, commit=None) -> int:
-    """Handle one update; returns next offset. The offset is committed
-    (acknowledged to Telegram) right after the 'received' reply, before the
-    slow work, so a crashed run never re-processes the same file."""
+    """Handle one update; returns next offset. A file/link is first answered with the
+    category question (nothing slow happens yet). Pressing «شروع» runs the work; the
+    offset is committed right before that, so a crashed run never repeats the same file."""
     nxt = update["update_id"] + 1
     if update.get("callback_query"):
-        handle_callback(update["callback_query"], cfg, tg)
+        handle_callback(update["callback_query"], cfg, tg, process_fn,
+                        commit=(lambda: commit(nxt)) if commit else None)
         return nxt
     msg = update.get("message")
     if not msg or msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
         return nxt
     chat_id = msg["chat"]["id"]
-    tg.send_message(chat_id, RECEIVED)
-    if commit:
-        commit(nxt)
-    for text in process_fn(msg):
-        tg.send_message(chat_id, text)
+    try:
+        resolve_input(msg)
+    except InputError as e:
+        tg.send_message(chat_id, str(e))
+        return nxt
+    tg.send_message(chat_id, ASK, reply_markup=keyboard(()), reply_to=msg.get("message_id"))
     return nxt
 
 
@@ -65,7 +67,7 @@ def main() -> int:
                     except TelegramError:
                         pass
 
-                offset = handle_update(u, cfg, tg, lambda m: process(m, deps), commit=commit)
+                offset = handle_update(u, cfg, tg, lambda m, cats: process(m, deps, cats), commit=commit)
     return 0
 
 

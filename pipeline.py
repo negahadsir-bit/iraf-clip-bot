@@ -4,7 +4,6 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from buttons import keyboard
 from formatting import format_clip
 from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
@@ -63,7 +62,7 @@ class _Progress:
         self._show("✍️ متن کامل شد؛ در حال انتخاب بهترین برش‌ها…")
 
 
-def process(message: dict, deps: Deps) -> list[str]:
+def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
     chat_id = message.get("chat", {}).get("id")
     progress = _Progress(message, deps)
     unsent: list[str] = []
@@ -76,7 +75,7 @@ def process(message: dict, deps: Deps) -> list[str]:
                                progress=progress,
                                on_skip=lambda i, n: skipped.append(i))
         progress.selecting()
-        clips = select_clips(sentences, deps.rules, deps.select_client)
+        clips = select_clips(sentences, deps.rules, deps.select_client, focus=cats)
         try:  # re-listen to each clip's surroundings: short audio gives accurate times
             clips = refine_clips(clips, audio, audio_seconds(audio), deps.transcribe_client,
                                  deps.workdir)
@@ -89,7 +88,7 @@ def process(message: dict, deps: Deps) -> list[str]:
         for clip in clips:
             text = format_clip(clip, sentences)
             try:
-                deps.tg.send_message(chat_id, text, reply_markup=keyboard(clip.cats))
+                deps.tg.send_message(chat_id, text)
             except Exception:  # noqa: BLE001 - keep the clip, return it at the end
                 unsent.append(text)
         if not clips:
