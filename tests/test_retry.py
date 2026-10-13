@@ -39,6 +39,27 @@ class RetryTests(unittest.TestCase):
             return "ok"
         self.assertEqual(call_with_fallback(drop, ["m1"], attempts=2, sleep=lambda s: None), "ok")
 
+    def test_unavailable_model_is_skipped_without_retrying(self):
+        calls = []
+
+        def fn(model):
+            calls.append(model)
+            if model == "old":
+                raise RuntimeError("404 NOT_FOUND. This model is no longer available")
+            return "ok"
+        self.assertEqual(call_with_fallback(fn, ["old", "new"], attempts=3, sleep=lambda s: None), "ok")
+        self.assertEqual(calls, ["old", "new"])
+
+    def test_models_from_env_default_chain_and_override(self):
+        import os
+        from unittest import mock
+        from retry import models_from_env
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(models_from_env()[0], "gemini-3.8-flash")
+            self.assertGreaterEqual(len(models_from_env()), 3)
+        with mock.patch.dict(os.environ, {"GEMINI_MODELS": "a, b"}, clear=True):
+            self.assertEqual(models_from_env(), ["a", "b"])
+
     def test_quota_and_other_errors_propagate_immediately(self):
         def boom(model):
             raise RuntimeError("429 RESOURCE_EXHAUSTED")
