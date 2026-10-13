@@ -6,6 +6,7 @@ from models import Clip, Sentence
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 
 MAX_CLIPS = 12
+TOP_MAX = 3
 EXTRA = 4  # ask for spare candidates: some get dropped (overlap, length)
 WORDS_PER_SEC = 2.6
 MIN_DUR, TARGET_MIN, MAX_DUR = 20.0, 35.0, 75.0
@@ -21,8 +22,9 @@ def _task(want: int) -> str:
         "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر، و تا جای ممکن در "
         f"همان {want} مورد پر کن، پخش‌شده در کل مصاحبه (نه فقط ابتدا)؛ اگر چیز خوبی نیست "
         "فهرست خالی برگردان. هر جمله با شماره‌ی [n] آمده. فقط JSON برگردان: "
-        '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی"}]. '
-        "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from.")
+        '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی", "top": false}]. '
+        "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from. بین همه‌ی برش‌ها حداکثر ۳ مورد را که "
+        "به نظرت وایرال‌ترین و قوی‌ترین‌اند (اولویت انتشار) با \"top\": true علامت بزن و بقیه false.")
 
 
 def _dur(sentences: list[Sentence], a: int, b: int) -> float:
@@ -70,7 +72,7 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         while _dur(sentences, a, b) > MAX_DUR and b > a:
             b -= 1
         c = Clip(rank, sentences[a].start, sentences[b].end, reason,
-                 " ".join(s.text for s in sentences[a:b + 1]))
+                 " ".join(s.text for s in sentences[a:b + 1]), d.get("top") is True)
         if not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):
             drops["bad_length"] += 1
             continue
@@ -83,7 +85,9 @@ def select_clips(sentences: list[Sentence], rules: str, client,
           + f" sentences={n}", file=sys.stderr, flush=True)
     print(f"selection raw json: {json.dumps(raw, ensure_ascii=False)[:1500]}",
           file=sys.stderr, flush=True)
-    return [replace(c, rank=i) for i, c in enumerate(clips[:min(want, MAX_CLIPS)], 1)]
+    final = clips[:min(want, MAX_CLIPS)]
+    flagged = [c for c in final if c.top][:TOP_MAX] or final[:TOP_MAX]  # no flags: best-ranked win
+    return [replace(c, rank=i, top=c in flagged) for i, c in enumerate(final, 1)]
 
 
 class GeminiTextClient:

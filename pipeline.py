@@ -107,6 +107,9 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
         if not clips:
             return ["هیچ برش مناسبی پیدا نشد."]
         done = f"✅ تمام شد: {len(clips)} پیشنهاد برش"
+        tops = [str(c.rank) for c in clips if c.top]
+        if tops:
+            done += f"\n🔥 اولویت پیشنهادی من (وایرال‌ترین‌ها): برش {'، '.join(tops)}"
         if skipped:
             nums = "، ".join(str(i) for i in sorted(skipped))
             done += f"\n⚠ تکه {nums} (هر کدام ۵ دقیقه) به‌خاطر شلوغی Gemini رد شد."

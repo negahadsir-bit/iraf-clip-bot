@@ -22,3 +22,4 @@ class Clip:
     end: float
     reason: str
     text: str = ""
+    top: bool = False
