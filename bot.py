@@ -8,6 +8,7 @@ from buttons import ASK, handle_callback, keyboard
 from config import ConfigError, load_config
 from feedback import handle_reason
 from media import InputError, resolve_input
+from netguard import NetGuard
 from pipeline import Deps, process
 from telegram_api import Telegram, TelegramError
 
@@ -54,13 +55,19 @@ def main() -> int:
     t_client, s_client = GeminiClient(cfg.gemini_key), make_select_client(os.environ, cfg.gemini_key)
     offset = None
     deadline = time.time() + BUDGET_SECONDS
+    guard = NetGuard()
     while time.time() < deadline:
         try:
             updates = tg.get_updates(offset, timeout=25)
         except TelegramError as e:
             print(f"telegram error: {e}", file=sys.stderr)
-            time.sleep(5)
+            if guard.failed():
+                print("telegram unreachable from this runner; ending the run so the next one reconnects",
+                      file=sys.stderr)
+                return 0
+            time.sleep(guard.pause())
             continue
+        guard.ok()
         for u in updates:
             with tempfile.TemporaryDirectory() as d:
                 deps = Deps(tg, t_client, s_client, Path(d), rules, memory=MEMORY, feedback=FEEDBACK)
