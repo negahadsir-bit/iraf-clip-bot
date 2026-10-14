@@ -66,6 +66,8 @@ def format_clip(clip: Clip, sentences: list[Sentence]) -> str:
     secs = clip.end - clip.start
     if secs >= 15 and len(dialogue.split()) / secs < MIN_WORDS_PER_SEC:
         tail += "\n\nℹ️ بخشی از این بازه احتمالاً بدون گفتار است (موسیقی یا تصویر آرشیوی)."
+    if clip.shaky:
+        tail += "\n\n⚠️ زمان‌بندی این برش تأیید نشد؛ قبل از استفاده شروع و پایانش را چک کن."
     room = LIMIT - len(head) - len(tail) - 2
     if len(dialogue) > room:
         dialogue = dialogue[:room - 1] + "…"

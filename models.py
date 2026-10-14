@@ -23,3 +23,4 @@ class Clip:
     reason: str
     text: str = ""
     top: bool = False
+    shaky: bool = False  # edges could not be confirmed by listening again

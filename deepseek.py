@@ -6,7 +6,8 @@ import urllib.request
 from retry import BusyError, QuotaError
 
 URL = "https://api.deepseek.com/chat/completions"
-MODEL = "deepseek-chat"
+MODEL = "deepseek-v4-pro"
+FALLBACK_MODEL = "deepseek-flash"
 ATTEMPTS = 5
 
 _JSON_NOTE = (
@@ -34,21 +35,28 @@ def _post(url: str, headers: dict, body: str, timeout: int) -> dict:
 class DeepSeekTextClient:
     """Text-only selection client with the same generate_json interface as Gemini."""
 
-    def __init__(self, api_key: str, model: str = MODEL, post=_post, sleep=time.sleep):
+    def __init__(self, api_key: str, model: str = MODEL, thinking: bool = True,
+                 post=_post, sleep=time.sleep):
         self._key, self._model, self._post, self._sleep = api_key, model, post, sleep
+        self._thinking = thinking
 
     def generate_json(self, prompt: str) -> list[dict]:
-        body = json.dumps({
+        req = {
             "model": self._model,
             "messages": [{"role": "user", "content": prompt + _JSON_NOTE}],
             "response_format": {"type": "json_object"},
-            "temperature": 0.3,
-        })
+            "thinking": {"type": "enabled" if self._thinking else "disabled"},
+        }
+        if self._thinking:
+            req["reasoning_effort"] = "high"  # thinking ignores temperature
+        else:
+            req["temperature"] = 0.3
+        body = json.dumps(req)
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         last = None
         for attempt in range(ATTEMPTS):
             try:
-                data = self._post(URL, headers, body, 180)
+                data = self._post(URL, headers, body, 360)
                 break
             except HttpFailure as e:
                 last = e

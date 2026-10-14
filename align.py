@@ -51,3 +51,17 @@ def locate(clip_text: str, window: list[Sentence], expect_start: float,
     if i is None or j is None or j + k - 1 <= i:
         return None
     return toks[i][1], toks[j + k - 1][2]
+
+
+def locate_edge(edge_words: list[str], window: list[Sentence], expect: float, side: str,
+                min_ratio: float = 0.7) -> float | None:
+    """Time (window clock) at which a clip's first words begin (side="start") or its last
+    words end (side="end") in a short, freshly transcribed window; None if not heard."""
+    toks = _tokens(window)
+    k = len(edge_words)
+    if k < 3 or len(toks) < k:
+        return None
+    i = _best(edge_words, toks, expect, min_ratio)
+    if i is None:
+        return None
+    return toks[i][1] if side == "start" else toks[i + k - 1][2]

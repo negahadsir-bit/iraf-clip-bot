@@ -8,6 +8,7 @@ from models import Clip
 
 MIN_CLIP = 20.0
 MAX_CLIP = 75.0
+CONFIRMED_WINDOW = 1.5
 _START = re.compile(r"silence_start: (-?\d+(?:\.\d+)?)")
 _END = re.compile(r"silence_end: (-?\d+(?:\.\d+)?)")
 
@@ -44,8 +45,9 @@ def snap_to_silence(clips: list[Clip], silences: list[tuple[float, float]],
     pauses = [s for s, _ in silences]
     out = []
     for c in clips:
-        start = _nearest(c.start, onsets, window)
-        end = _nearest(c.end, pauses, window)
+        w = window if c.shaky else min(window, CONFIRMED_WINDOW)  # heard edges are already close
+        start = _nearest(c.start, onsets, w)
+        end = _nearest(c.end, pauses, w)
         start = c.start if start is None else start
         end = c.end if end is None else end
         if end - start < MIN_CLIP:

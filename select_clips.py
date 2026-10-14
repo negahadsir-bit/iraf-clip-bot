@@ -208,6 +208,9 @@ def make_select_client(env, gemini_key: str):
     """DeepSeek (falling back to Gemini) when DEEPSEEK_API_KEY is set, otherwise Gemini."""
     key = (env.get("DEEPSEEK_API_KEY") or "").strip()
     if key:
-        from deepseek import DeepSeekTextClient
-        return FallbackClient(DeepSeekTextClient(key), GeminiTextClient(gemini_key))
+        from deepseek import FALLBACK_MODEL, MODEL, DeepSeekTextClient
+        model = (env.get("DEEPSEEK_MODEL") or "").strip() or MODEL
+        deepseek = FallbackClient(DeepSeekTextClient(key, model),
+                                  DeepSeekTextClient(key, FALLBACK_MODEL))
+        return FallbackClient(deepseek, GeminiTextClient(gemini_key))
     return GeminiTextClient(gemini_key)
