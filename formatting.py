@@ -3,6 +3,7 @@ from models import Clip, Sentence
 LIMIT = 4096
 MAX_REASON = 400
 EDGE_WORDS = 7
+MIN_WORDS_PER_SEC = 1.5  # slower than this and part of the clip is not speech
 
 
 def fmt_time(seconds: float) -> str:
@@ -62,6 +63,9 @@ def format_clip(clip: Clip, sentences: list[Sentence]) -> str:
     head = (f"{title}\n"
             f"{fmt_time(clip.start)} – {fmt_time(clip.end)} ({round(clip.end - clip.start)}ث)\n\n")
     tail = f"\n\nچرا: {reason}"
+    secs = clip.end - clip.start
+    if secs >= 15 and len(dialogue.split()) / secs < MIN_WORDS_PER_SEC:
+        tail += "\n\nℹ️ بخشی از این بازه احتمالاً بدون گفتار است (موسیقی یا تصویر آرشیوی)."
     room = LIMIT - len(head) - len(tail) - 2
     if len(dialogue) > room:
         dialogue = dialogue[:room - 1] + "…"

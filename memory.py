@@ -6,6 +6,7 @@ from categories import CATS
 
 PER_CAT = 5
 DISLIKED = 3
+REASONS = 6
 CLIP_CHARS = 240
 
 
@@ -31,6 +32,17 @@ def save_viral(path: Path, viral: bool, cats, text: str) -> None:
     """The user's own experience-based call: did this clip have viral potential or not."""
     _append(path, {"ts": int(time.time()), "viral": bool(viral),
                    "cats": [CATS[i] for i in cats if 0 <= i < len(CATS)], "text": text[:CLIP_CHARS]})
+
+
+def save_reason(path: Path, cats, text: str, reason: str) -> None:
+    """Why the user thought a clip was weak, in their own words."""
+    _append(path, {"ts": int(time.time()), "reason": reason.strip()[:400],
+                   "cats": [CATS[i] for i in cats if 0 <= i < len(CATS)], "text": text[:CLIP_CHARS]})
+
+
+def _reasons(feedback: list[dict], cat: str) -> list[str]:
+    return [f"{e['reason']} (نمونه: «{str(e.get('text', ''))[:80]}»)" for e in reversed(feedback)
+            if e.get("reason") and cat in e["cats"]]
 
 
 def _read(path: Path | None) -> list[dict]:
@@ -97,6 +109,10 @@ def examples_note(path: Path | None, cats, feedback_path: Path | None = None) ->
             parts.append("برش‌هایی که کاربر پسندید (مثل این‌ها بساز):\n" + "\n".join(f"- «{t}»" for t in liked))
         if disliked:
             parts.append("برش‌هایی که کاربر نپسندید (اولویت پایین‌تر بده، اما اگر مناسب بودند حذفشان نکن):\n" + "\n".join(f"- «{t}»" for t in disliked))
+        why = _reasons(feedback, CATS[i])[:REASONS]
+        if why:
+            parts.append("دلایلی که کاربر برای ضعیف بودن برش‌ها گفته (این اشتباه‌ها را نکن):\n"
+                         + "\n".join(f"- {t}" for t in why))
         if picks:
             parts.append("پیشنهادهای قبلی همین دسته:\n" + "\n".join(f"- «{t}»" for t in picks))
         if parts:

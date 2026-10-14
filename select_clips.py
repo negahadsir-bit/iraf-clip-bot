@@ -3,6 +3,7 @@ import sys
 from dataclasses import replace
 from categories import focus_note
 from models import Clip, Sentence
+from timeline import _TERMINATORS
 from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 
 MAX_CLIPS = 12
@@ -25,7 +26,11 @@ def _task(want: int) -> str:
         '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی", "top": false}]. '
         "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from. بین همه‌ی برش‌ها حداکثر ۳ مورد را که "
         "به نظرت وایرال‌ترین و قوی‌ترین‌اند (اولویت انتشار) با \"top\": true علامت بزن و بقیه false. "
-        "top نبودن یعنی فقط اولویت پایین‌تر؛ آن برش‌ها را از فهرست حذف نکن.")
+        "top نبودن یعنی فقط اولویت پایین‌تر؛ آن برش‌ها را از فهرست حذف نکن. "
+        "توجه: وسط صوت ممکن است ویدیوی آرشیوی، موسیقی یا صدای غیرگفتاری پخش شود؛ در فهرست با "
+        "«⏸ …ث بدون گفتار» مشخص شده. از آن‌ها برای حدس زدن ساختار استفاده کن و سر و ته هر برش "
+        "را درست بچین: هر برش باید با یک جمله‌ی کامل و مستقل شروع شود (نه ادامه‌ی جمله‌ی قبل و "
+        "نه با «و/که/ولی» ناقص) و با یک جمله‌ی تمام‌شده پایان یابد، نه وسط حرف.")
 
 
 def _dur(sentences: list[Sentence], a: int, b: int) -> float:
@@ -34,12 +39,40 @@ def _dur(sentences: list[Sentence], a: int, b: int) -> float:
     return max(sentences[b].end - sentences[a].start, words / WORDS_PER_SEC)
 
 
+GAP_MARK = 8.0  # seconds without speech worth telling the model about
+
+
 def _numbered(sentences: list[Sentence]) -> str:
     lines = []
     for i, s in enumerate(sentences):
         sec = int(s.start)
-        lines.append(f"[{i}] {sec // 60}:{sec % 60:02d} {s.text}")
+        gap = s.start - sentences[i - 1].end if i else 0.0
+        mark = f"⏸{round(gap)}ث بدون گفتار " if gap >= GAP_MARK else ""
+        lines.append(f"[{i}] {sec // 60}:{sec % 60:02d} {mark}{s.text}")
     return "\n".join(lines)
+
+
+def _done(s: Sentence) -> bool:
+    return s.text.rstrip().endswith(_TERMINATORS)
+
+
+def _punctuated(sentences: list[Sentence]) -> bool:
+    """Edge snapping only makes sense when the transcript really has sentence endings."""
+    return bool(sentences) and sum(_done(s) for s in sentences) * 2 >= len(sentences)
+
+
+def _snap_edges(sentences: list[Sentence], a: int, b: int) -> tuple[int, int]:
+    """Start on the beginning of a sentence and stop on the end of a finished one."""
+    n = len(sentences)
+    for _ in range(2):
+        if a > 0 and not _done(sentences[a - 1]):
+            a -= 1
+    for _ in range(2):
+        if b + 1 < n and not _done(sentences[b]):
+            b += 1
+    while _dur(sentences, a, b) > MAX_DUR and b > a:
+        b -= 1
+    return a, b
 
 
 def select_clips(sentences: list[Sentence], rules: str, client,
@@ -57,6 +90,7 @@ def select_clips(sentences: list[Sentence], rules: str, client,
     if not isinstance(raw, list):
         raise SelectionError("not a list")
     n = len(sentences)
+    punctuated = _punctuated(sentences)
     clips = []
     drops = {"bad_index": 0, "bad_length": 0, "overlap": 0}
     for d in sorted(raw, key=lambda d: d.get("rank", 0) if isinstance(d, dict) else 0):
@@ -72,6 +106,8 @@ def select_clips(sentences: list[Sentence], rules: str, client,
             b += 1  # the model cannot see durations: grow short picks sentence by sentence
         while _dur(sentences, a, b) > MAX_DUR and b > a:
             b -= 1
+        if punctuated:
+            a, b = _snap_edges(sentences, a, b)
         c = Clip(rank, sentences[a].start, sentences[b].end, reason,
                  " ".join(s.text for s in sentences[a:b + 1]), d.get("top") is True)
         if not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):

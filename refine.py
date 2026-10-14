@@ -22,6 +22,19 @@ def _cut(audio: Path, start: float, length: float, dest: Path) -> Path:
     return dest
 
 
+def _heard_text(window, start: float, end: float, fallback: str) -> str:
+    """What the short, fresh transcription hears between the edges. The first pass can drop
+    words, so the shown dialogue would look shorter than the seconds; keep the fuller one."""
+    inside = []
+    for s in window:
+        length = max(s.end - s.start, 0.01)
+        overlap = min(s.end, end) - max(s.start, start)
+        if overlap / length >= 0.5:
+            inside.append(s.text)
+    heard = " ".join(inside)
+    return heard if len(heard.split()) > len(fallback.split()) else fallback
+
+
 def refine_one(clip: Clip, audio: Path, total: float, client, workdir: Path) -> Clip:
     """Re-transcribe only the clip's surroundings (short audio keeps timestamps accurate)
     and move the clip edges to where its words really are."""
@@ -32,7 +45,8 @@ def refine_one(clip: Clip, audio: Path, total: float, client, workdir: Path) -> 
         window = client.transcribe_sentences(_cut(audio, w0, w1 - w0, dest))
         found = locate(clip.text, window, clip.start - w0) if window else None
         if found and MIN_LEN <= found[1] - found[0] <= MAX_LEN:
-            return replace(clip, start=w0 + found[0], end=w0 + found[1])
+            return replace(clip, start=w0 + found[0], end=w0 + found[1],
+                           text=_heard_text(window, found[0], found[1], clip.text))
     return clip
 
 

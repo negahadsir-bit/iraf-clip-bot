@@ -6,6 +6,7 @@ from pathlib import Path
 
 from buttons import ASK, handle_callback, keyboard
 from config import ConfigError, load_config
+from feedback import handle_reason
 from media import InputError, resolve_input
 from pipeline import Deps, process
 from telegram_api import Telegram, TelegramError
@@ -29,6 +30,8 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=
     if not msg or msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
         return nxt
     chat_id = msg["chat"]["id"]
+    if handle_reason(msg, cfg, tg, feedback_path):
+        return nxt
     try:
         resolve_input(msg)
     except InputError as e:
