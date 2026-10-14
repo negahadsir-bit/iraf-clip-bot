@@ -10,6 +10,7 @@ from retry import QuotaError
 
 MIN_LEN, MAX_LEN = 18.0, 76.0
 PADS = (25.0, 100.0)  # first look close by, then much wider
+EDGE = 3.0  # words found this close to a cut window's edge were probably cut off by it
 
 
 def _cut(audio: Path, start: float, length: float, dest: Path) -> Path:
@@ -44,9 +45,18 @@ def refine_one(clip: Clip, audio: Path, total: float, client, workdir: Path) -> 
         dest = workdir / f"win_{clip.rank}_{int(pad)}.mp3"
         window = client.transcribe_sentences(_cut(audio, w0, w1 - w0, dest))
         found = locate(clip.text, window, clip.start - w0) if window else None
+        if found and pad != PADS[-1]:
+            cut_start = w0 > 0 and found[0] < EDGE
+            cut_end = w1 < total and found[1] > (w1 - w0) - EDGE
+            if cut_start or cut_end:
+                continue  # the window may have sliced the clip: look again, wider
         if found and MIN_LEN <= found[1] - found[0] <= MAX_LEN:
+            print(f"refine clip {clip.rank}: pad {pad:.0f}s, start {clip.start:.1f}->{w0 + found[0]:.1f}, "
+                  f"end {clip.end:.1f}->{w0 + found[1]:.1f}", file=sys.stderr, flush=True)
             return replace(clip, start=w0 + found[0], end=w0 + found[1],
                            text=_heard_text(window, found[0], found[1], clip.text))
+    print(f"refine clip {clip.rank}: not located, kept {clip.start:.1f}-{clip.end:.1f}",
+          file=sys.stderr, flush=True)
     return clip
 
 
