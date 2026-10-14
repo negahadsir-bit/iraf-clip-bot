@@ -1,38 +1,38 @@
-404: Not Found
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
 
-
-
-
-
+from models import Clip
 from silence import detect_silences, drop_overlaps, snap_to_silence
 
 
+class SnapTests(unittest.TestCase):
+    SIL = [(10.0, 12.0), (30.0, 31.0), (70.0, 72.0)]
 
+    def test_start_moves_to_nearest_speech_onset_within_window(self):
+        out = snap_to_silence([Clip(1, 13.5, 68.0, "r")], self.SIL)
+        self.assertEqual(out[0].start, 12.0)
 
+    def test_end_moves_to_nearest_pause_start_within_window(self):
+        out = snap_to_silence([Clip(1, 13.5, 68.5, "r")], self.SIL)
+        self.assertEqual(out[0].end, 70.0)
 
+    def test_far_boundaries_are_left_alone(self):
+        out = snap_to_silence([Clip(1, 20.0, 50.0, "r")], self.SIL)
+        self.assertEqual((out[0].start, out[0].end), (20.0, 50.0))
 
+    def test_snapping_never_makes_clip_shorter_than_20_seconds(self):
+        out = snap_to_silence([Clip(1, 8.0, 29.0, "r")], self.SIL)
+        self.assertGreaterEqual(out[0].end - out[0].start, 20.0)
 
+    def test_rank_and_reason_are_kept(self):
+        out = snap_to_silence([Clip(7, 13.5, 68.5, "why")], self.SIL)
+        self.assertEqual((out[0].rank, out[0].reason), (7, "why"))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def test_no_silences_returns_clips_unchanged(self):
+        c = Clip(1, 5.0, 60.0, "r")
+        self.assertEqual(snap_to_silence([c], []), [c])
 
 
 class LimitTests(unittest.TestCase):
@@ -60,3 +60,20 @@ class OverlapTests(unittest.TestCase):
         out = drop_overlaps([a, b, c])
         self.assertEqual([(x.rank, x.reason) for x in out], [(1, "a"), (2, "c")])
 
+
+class DetectTests(unittest.TestCase):
+    def test_finds_the_pause_in_real_audio(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "a.wav"
+            subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+                 "aevalsrc=if(between(t\\,2\\,3)\\,0\\,0.5*sin(2*PI*440*t)):d=5:s=16000",
+                 str(p)], check=True)
+            sil = detect_silences(p)
+        self.assertEqual(len(sil), 1)
+        self.assertAlmostEqual(sil[0][0], 2.0, delta=0.15)
+        self.assertAlmostEqual(sil[0][1], 3.0, delta=0.15)
+
+
+if __name__ == "__main__":
+    unittest.main()
