@@ -28,7 +28,7 @@ class Telegram:
         return data["result"]
 
     def get_updates(self, offset: int | None, timeout: int = 25) -> list[dict]:
-        payload = {"timeout": timeout, "allowed_updates": ["message", "callback_query"]}
+        payload = {"timeout": timeout, "allowed_updates": ["message", "callback_query", "channel_post", "edited_channel_post"]}
         if offset is not None:
             payload["offset"] = offset
         return self._call("getUpdates", payload, timeout=timeout + 15)

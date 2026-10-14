@@ -8,6 +8,7 @@ from buttons import ASK, handle_callback, keyboard
 from config import ConfigError, load_config
 from feedback import handle_reason
 from media import InputError, resolve_input
+from music import add_post
 from netguard import NetGuard
 from pipeline import Deps, process
 from wordsmode import run_words, words_text
@@ -16,10 +17,11 @@ from telegram_api import Telegram, TelegramError
 BUDGET_SECONDS = 5 * 60
 MEMORY = Path(__file__).parent / "memory" / "labels.jsonl"
 FEEDBACK = MEMORY.parent / "feedback.jsonl"
+MUSIC = MEMORY.parent / "music" / "catalog.json"
 
 
 def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=None,
-                  words=None) -> int:
+                  words=None, music_path=None) -> int:
     """Handle one update; returns next offset. A file/link is first answered with the
     category question (nothing slow happens yet). Pressing «شروع» runs the work; the
     offset is committed right before that, so a crashed run never repeats the same file."""
@@ -28,6 +30,11 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=
         handle_callback(update["callback_query"], cfg, tg, process_fn,
                         commit=(lambda: commit(nxt)) if commit else None,
                         feedback_path=feedback_path)
+        return nxt
+    post = update.get("channel_post") or update.get("edited_channel_post")
+    if post:  # music channel: keep a catalog of its tracks and their hashtags
+        if music_path is not None:
+            add_post(music_path, post)
         return nxt
     msg = update.get("message")
     if not msg or msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
@@ -87,7 +94,7 @@ def main() -> int:
                         pass
 
                 offset = handle_update(u, cfg, tg, lambda m, cats: process(m, deps, cats), commit=commit,
-                                       feedback_path=FEEDBACK,
+                                       feedback_path=FEEDBACK, music_path=MUSIC,
                                        words=lambda m, t: run_words(m, t, tg, t_client, Path(d), MEMORY.parent))
     return 0
 
