@@ -10,6 +10,7 @@ from feedback import handle_reason
 from media import InputError, resolve_input
 from netguard import NetGuard
 from pipeline import Deps, process
+from wordsmode import run_words, words_text
 from telegram_api import Telegram, TelegramError
 
 BUDGET_SECONDS = 5 * 60
@@ -17,7 +18,8 @@ MEMORY = Path(__file__).parent / "memory" / "labels.jsonl"
 FEEDBACK = MEMORY.parent / "feedback.jsonl"
 
 
-def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=None) -> int:
+def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=None,
+                  words=None) -> int:
     """Handle one update; returns next offset. A file/link is first answered with the
     category question (nothing slow happens yet). Pressing «شروع» runs the work; the
     offset is committed right before that, so a crashed run never repeats the same file."""
@@ -32,6 +34,10 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=
         return nxt
     chat_id = msg["chat"]["id"]
     if handle_reason(msg, cfg, tg, feedback_path):
+        return nxt
+    text = words_text(msg)
+    if text is not None and words is not None:  # caption «words»: word times for subtitles
+        words(msg, text)
         return nxt
     try:
         resolve_input(msg)
@@ -81,7 +87,8 @@ def main() -> int:
                         pass
 
                 offset = handle_update(u, cfg, tg, lambda m, cats: process(m, deps, cats), commit=commit,
-                                       feedback_path=FEEDBACK)
+                                       feedback_path=FEEDBACK,
+                                       words=lambda m, t: run_words(m, t, tg, t_client, Path(d), MEMORY.parent))
     return 0
 
 

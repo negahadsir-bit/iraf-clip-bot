@@ -125,6 +125,20 @@ _PROMPT_SENT = (
     "به‌صورت عدد ثانیه‌ی اعشاری (مثلاً 83.5) و نه دقیقه:ثانیه.")
 
 
+_PROMPT_ALIGN = (
+    "این فایل صوتی فارسی یک برش کوتاه است. متن زیر همان چیزی است که در آن گفته می‌شود "
+    "(ممکن است چند غلط داشته باشد):\n«%s»\n"
+    "برای هر کلمه‌ی این متن، به ترتیب، زمان دقیق شروع و پایان گفتن آن کلمه را از ابتدای فایل بده، "
+    "به‌صورت عدد ثانیه‌ی اعشاری (مثلاً 3.42). فقط JSON برگردان: "
+    '[{"text": "کلمه از متن", "heard": "آنچه واقعاً شنیده می‌شود", "start": ثانیه, "end": ثانیه}, ...]. '
+    "هیچ کلمه‌ای را جا نینداز و کلمه‌ی اضافه نیاور. زمان‌ها باید دقیقاً با صدا هماهنگ باشند و "
+    "در مکث‌ها و سکوت‌ها هیچ کلمه‌ای قرار نگیرد.")
+_PROMPT_FREE_WORDS = (
+    "این فایل صوتی فارسی را کلمه به کلمه بنویس. فقط JSON برگردان: "
+    '[{"text": "...", "heard": "...", "start": ثانیه, "end": ثانیه}, ...] با زمان دقیق هر کلمه از '
+    "ابتدای فایل به‌صورت عدد ثانیه‌ی اعشاری. در مکث‌ها کلمه‌ای قرار نده.")
+
+
 class GeminiClient:
     """Real client; google-genai imported lazily (not unit-tested)."""
 
@@ -148,6 +162,18 @@ class GeminiClient:
         except (ValueError, TypeError):
             return []
         return [d for d in data if isinstance(d, dict) and "text" in d] if isinstance(data, list) else []
+
+    def align_words(self, audio: Path, text: str = "") -> list[dict]:
+        """Per-word times of a short clip; with `text`, one row per word of that text."""
+        rows = self._ask(audio, _PROMPT_ALIGN.replace("%s", text) if text else _PROMPT_FREE_WORDS)
+        out = []
+        for r in rows:
+            try:
+                out.append({"text": str(r["text"]), "heard": str(r.get("heard", r["text"])),
+                            "start": parse_seconds(r["start"]), "end": parse_seconds(r["end"])})
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
 
     def transcribe_words(self, audio: Path):
         # Word-level output is too long for the API (connections drop), so the
