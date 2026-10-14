@@ -7,6 +7,7 @@ from dataclasses import replace
 from models import Clip
 
 MIN_CLIP = 20.0
+MAX_CLIP = 75.0
 _START = re.compile(r"silence_start: (-?\d+(?:\.\d+)?)")
 _END = re.compile(r"silence_end: (-?\d+(?:\.\d+)?)")
 
@@ -49,5 +50,24 @@ def snap_to_silence(clips: list[Clip], silences: list[tuple[float, float]],
         end = c.end if end is None else end
         if end - start < MIN_CLIP:
             start, end = c.start, c.end
+        if end - start > MAX_CLIP and c.end - c.start <= MAX_CLIP:
+            # snapping must not stretch a clip past the cap: undo the edge that grew it
+            end = c.end if end - c.start <= MAX_CLIP else end
+            if end - start > MAX_CLIP:
+                start = c.start
+            if end - start > MAX_CLIP:
+                start, end = c.start, c.end
         out.append(replace(c, start=start, end=end))
     return out
+
+
+def drop_overlaps(clips: list[Clip], tolerance: float = 1.0) -> list[Clip]:
+    """After re-timing, two clips can turn out to cover the same speech. Keep the
+    priority (top) and better-ranked one, drop the other, then renumber."""
+    kept: list[Clip] = []
+    for c in sorted(clips, key=lambda x: (not x.top, x.rank)):
+        if any(min(c.end, k.end) - max(c.start, k.start) > tolerance for k in kept):
+            continue
+        kept.append(c)
+    kept.sort(key=lambda x: x.rank)
+    return [replace(c, rank=i) for i, c in enumerate(kept, 1)]

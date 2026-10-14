@@ -12,7 +12,7 @@ from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
 from refine import refine_clips
-from silence import detect_silences, snap_to_silence
+from silence import detect_silences, drop_overlaps, snap_to_silence
 from transcribe import TranscriptionError, audio_seconds, transcribe
 
 QUOTA = "سهمیه‌ی رایگان Gemini پر شده؛ کمی بعد دوباره بفرست."
@@ -95,6 +95,7 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
             clips = snap_to_silence(clips, detect_silences(audio))
         except Exception as e:  # noqa: BLE001 - never lose clips over a refinement step
             print(f"silence snapping skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+        clips = drop_overlaps(clips)  # re-timing can reveal two clips on the same speech
         if cats and clips and deps.memory is not None:
             try:  # the user's own category choice teaches later runs
                 save_interview(deps.memory, cats, clips)

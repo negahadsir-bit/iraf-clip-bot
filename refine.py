@@ -8,7 +8,7 @@ from align import locate
 from models import Clip
 from retry import QuotaError
 
-MIN_LEN, MAX_LEN = 18.0, 90.0
+MIN_LEN, MAX_LEN = 18.0, 76.0
 PADS = (25.0, 100.0)  # first look close by, then much wider
 
 
