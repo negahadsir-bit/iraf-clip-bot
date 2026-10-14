@@ -30,7 +30,10 @@ def _task(want: int) -> str:
         "توجه: وسط صوت ممکن است ویدیوی آرشیوی، موسیقی یا صدای غیرگفتاری پخش شود؛ در فهرست با "
         "«⏸ …ث بدون گفتار» مشخص شده. از آن‌ها برای حدس زدن ساختار استفاده کن و سر و ته هر برش "
         "را درست بچین: هر برش باید با یک جمله‌ی کامل و مستقل شروع شود (نه ادامه‌ی جمله‌ی قبل و "
-        "نه با «و/که/ولی» ناقص) و با یک جمله‌ی تمام‌شده پایان یابد، نه وسط حرف.")
+        "نه با «و/که/ولی» ناقص) و با یک جمله‌ی تمام‌شده پایان یابد، نه وسط حرف. "
+        "کنار هر جمله مدتش آمده، مثل (۸ث). مدت هر برش، یعنی از شروع جمله‌ی from تا پایان جمله‌ی to، "
+        "باید بین ۳۵ و ۷۰ ثانیه باشد و هرگز از ۷۵ ثانیه بیشتر نشود؛ پایان برش را همان‌جا که "
+        "فکر کامل می‌شود بگذار، نه آنجا که از حد می‌گذرد.")
 
 
 def _dur(sentences: list[Sentence], a: int, b: int) -> float:
@@ -48,7 +51,7 @@ def _numbered(sentences: list[Sentence]) -> str:
         sec = int(s.start)
         gap = s.start - sentences[i - 1].end if i else 0.0
         mark = f"⏸{round(gap)}ث بدون گفتار " if gap >= GAP_MARK else ""
-        lines.append(f"[{i}] {sec // 60}:{sec % 60:02d} {mark}{s.text}")
+        lines.append(f"[{i}] {sec // 60}:{sec % 60:02d} ({round(s.end - s.start)}ث) {mark}{s.text}")
     return "\n".join(lines)
 
 
@@ -61,18 +64,63 @@ def _punctuated(sentences: list[Sentence]) -> bool:
     return bool(sentences) and sum(_done(s) for s in sentences) * 2 >= len(sentences)
 
 
-def _snap_edges(sentences: list[Sentence], a: int, b: int) -> tuple[int, int]:
-    """Start on the beginning of a sentence and stop on the end of a finished one."""
-    n = len(sentences)
+_CONNECTORS = {"و", "که", "ولی", "اما", "پس", "یعنی", "چون", "بنابراین", "همچنین", "لذا"}
+
+
+def _dangling(s: Sentence) -> bool:
+    first = s.text.split()[0].strip("،,.") if s.text.split() else ""
+    return first in _CONNECTORS
+
+
+def _snap_start(sentences: list[Sentence], a: int, b: int) -> int:
+    """Begin at the start of a sentence: back up over an unfinished one, or skip a leading
+    sentence that only continues the previous thought (while enough clip remains)."""
     for _ in range(2):
         if a > 0 and not _done(sentences[a - 1]):
             a -= 1
     for _ in range(2):
-        if b + 1 < n and not _done(sentences[b]):
-            b += 1
+        if a < b and _dangling(sentences[a]) and _dur(sentences, a + 1, b) >= TARGET_MIN:
+            a += 1
+    return a
+
+
+def _end_score(sentences: list[Sentence], b: int) -> float:
+    gap = sentences[b + 1].start - sentences[b].end if b + 1 < len(sentences) else 0.0
+    return (1.0 if _done(sentences[b]) else 0.0) + min(max(gap, 0.0), 1.5) / 1.5 * 0.5
+
+
+def _fit_end(sentences: list[Sentence], a: int, b: int, punctuated: bool = True) -> int:
+    """Choose where the clip ends so its length lands in [TARGET_MIN, MAX_DUR], preferring a
+    finished sentence followed by a pause over simply the last one that fits."""
+    n = len(sentences)
+    if TARGET_MIN <= _dur(sentences, a, b) <= MAX_DUR and (not punctuated or _done(sentences[b])):
+        return b  # the model's own ending is already fine
+    if _dur(sentences, a, b) > MAX_DUR:
+        order = range(b, a - 1, -1)   # too long: shorten, longest fit first
+    else:
+        order = range(b, n)           # too short or fine: lengthen only as far as needed
+    best, best_score = None, -1.0
+    for k in order:
+        d = _dur(sentences, a, k)
+        if d > MAX_DUR:
+            if order.step > 0:
+                break
+            continue
+        if d < TARGET_MIN:
+            if order.step < 0:
+                break
+            continue
+        score = _end_score(sentences, k)
+        if score > best_score:
+            best, best_score = k, score
+    if best is not None:
+        return best
+    # no ideal end exists (e.g. episode ends first): old behaviour
+    while _dur(sentences, a, b) < TARGET_MIN and b + 1 < n:
+        b += 1
     while _dur(sentences, a, b) > MAX_DUR and b > a:
         b -= 1
-    return a, b
+    return b
 
 
 def select_clips(sentences: list[Sentence], rules: str, client,
@@ -102,12 +150,9 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         if not (0 <= a <= b < n):
             drops["bad_index"] += 1
             continue
-        while _dur(sentences, a, b) < TARGET_MIN and b + 1 < n:
-            b += 1  # the model cannot see durations: grow short picks sentence by sentence
-        while _dur(sentences, a, b) > MAX_DUR and b > a:
-            b -= 1
         if punctuated:
-            a, b = _snap_edges(sentences, a, b)
+            a = _snap_start(sentences, a, b)
+        b = _fit_end(sentences, a, b, punctuated)
         c = Clip(rank, sentences[a].start, sentences[b].end, reason,
                  " ".join(s.text for s in sentences[a:b + 1]), d.get("top") is True)
         if not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):
