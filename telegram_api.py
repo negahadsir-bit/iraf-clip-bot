@@ -43,8 +43,11 @@ class Telegram:
         return self._call("getUpdates", payload, timeout=timeout + 15)
 
     def send_message(self, chat_id: int, text: str, reply_markup: dict | None = None,
-                     reply_to: int | None = None) -> int:
+                     reply_to: int | None = None, entities: list | None = None) -> int:
         payload = {"chat_id": chat_id, "text": text}
+        if entities:
+            payload["entities"] = entities
+            payload["link_preview_options"] = {"is_disabled": True}
         if reply_to is not None:
             payload["reply_to_message_id"] = reply_to
         if reply_markup is not None:
@@ -52,8 +55,11 @@ class Telegram:
         return self._call("sendMessage", payload)["message_id"]
 
     def edit_message(self, chat_id: int, message_id: int, text: str,
-                     reply_markup: dict | None = None) -> None:
+                     reply_markup: dict | None = None, entities: list | None = None) -> None:
         payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
+        if entities:
+            payload["entities"] = entities
+            payload["link_preview_options"] = {"is_disabled": True}
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
         self._call("editMessageText", payload)
