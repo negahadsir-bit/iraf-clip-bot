@@ -3,7 +3,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-TG_LIMIT = 20 * 1024 * 1024
+import os
+TG_LIMIT = (2000 if os.environ.get("TELEGRAM_API_URL") else 20) * 1024 * 1024
 _MEDIA_KEYS = ("audio", "voice", "video", "video_note", "document")
 _DRIVE_RE = re.compile(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([A-Za-z0-9_-]+)")
 

@@ -56,3 +56,20 @@ def add_post(path: Path, post: dict) -> bool:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
     return True
+
+
+_PLAIN = {"message_id", "sender_chat", "chat", "date", "caption", "caption_entities", "entities",
+          "author_signature", "forward_origin", "forward_from_chat", "forward_from_message_id",
+          "forward_date", "forward_signature"}
+
+
+def log_seen(path: Path, update: dict) -> None:
+    """One line per channel update, whatever it carries: shows what Telegram really delivers."""
+    post = update.get("channel_post") or update.get("edited_channel_post") or {}
+    row = {"update_id": update.get("update_id"), "edited": "edited_channel_post" in update,
+           "message_id": post.get("message_id"), "media_group_id": post.get("media_group_id"),
+           "kinds": sorted(set(post) - _PLAIN)}
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")

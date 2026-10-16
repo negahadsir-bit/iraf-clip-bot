@@ -1,2 +1,5 @@
 google-genai
 gdown
+numpy
+scipy
+playwright
