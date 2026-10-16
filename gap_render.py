@@ -16,7 +16,7 @@ W, H, FPS = 1080, 1920, 30
 # layout in px at 1080x1920 (measured from the sample, 720x1280 x1.5)
 SUB_Y, NAME_Y, MARK_Y = 1383, 1443, 1500
 SUB_SIZE, NAME_SIZE, MARK_SIZE = 48, 32, 24.5
-NAME_OPACITY = 0.75
+NAME_OPACITY = 0.30   # 10 points above the IRAFTV wordmark (0.20)
 BADGE_X, BADGE_Y, BADGE_W = 708, 235, 219   # visible badge box (native 310x158 inside the 399x275 mov)
 BADGE_NATIVE = (40, 57, 349, 214)
 
@@ -184,6 +184,21 @@ def lufs_of(path):
     return float(m[-1]) if m else -23.0
 
 
+FADE = 2.0  # the last seconds fade out (picture to black, sound to silence)
+
+
+FADE_IN = 0.4  # the first caption eases in instead of popping onto the screen
+
+
+def cap_fade(sched):
+    first = next((a for t, a, b in sched if t), None)
+    return "" if first is None else f",fade=t=in:st={first:.3f}:d={FADE_IN}:alpha=1"
+
+
+def afade_out(L):
+    return f"afade=t=out:st={max(0.0, L - FADE):.3f}:d={min(FADE, L):.3f}"
+
+
 MUSIC_BELOW = 5.0  # dB under the speech loudness: heard, never competing with the voice
 
 
@@ -193,7 +208,7 @@ def music_inputs(music_file, music_lufs, video, L):
     fo = max(0.0, L - 2.0)
     f = (f"[4:a]aloop=loop=-1:size=2e9,atrim=0:{L:.3f},volume={gain:.1f}dB,"
          f"afade=t=in:d=0.5,afade=t=out:st={fo:.2f}:d=2[mus];"
-         f"[0:a][mus]amix=inputs=2:duration=first:normalize=0[aout]")
+         f"[0:a][mus]amix=inputs=2:duration=first:normalize=0,{afade_out(L)}[aout]")
     return ["-i", music_file], f
 
 
@@ -217,9 +232,10 @@ def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_
     bf, ox, oy = badge_filter(L, template)
     fc = (bf + f";[0:v]scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,"
           f"fps={FPS},format=yuv420p[bg];[bg][2:v]overlay=0:0:eof_action=pass[a];"
-          f"[3:v]fps={FPS},format=rgba[caps];[a][caps]overlay=0:0:eof_action=pass[b];"
-          f"[b][badge]overlay={ox}:{oy}:eof_action=pass,format=yuv420p[v]")
-    extra, amap = [], ["-map", "0:a?"]
+          f"[3:v]fps={FPS},format=rgba{cap_fade(sched)}[caps];[a][caps]overlay=0:0:eof_action=pass[b];"
+          f"[b][badge]overlay={ox}:{oy}:eof_action=pass,format=yuv420p,"
+          f"fade=t=out:st={max(0.0, L - FADE):.3f}:d={min(FADE, L):.3f}[v]")
+    extra, amap = [], ["-map", "0:a?", "-af", afade_out(L)]
     if music_file:
         extra, af = music_inputs(music_file, music_lufs if music_lufs is not None else lufs_of(music_file),
                                  video, L)
