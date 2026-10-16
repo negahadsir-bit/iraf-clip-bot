@@ -6,6 +6,8 @@ import base64
 import json
 import random
 import re
+import shutil
+import time
 import sys
 import zlib
 from pathlib import Path
@@ -18,11 +20,54 @@ _LINK = re.compile(r"https?://\S*drive\.google\.com\S*")
 _TRIGGER = re.compile(r"(?is)^\s*(?:رندر|render)(?=\s|$)\s*(.*)$")
 MOODS = ("غمگین", "احساسی", "حماسی", "آرام", "عاشقانه", "نوستالژیک", "انگیزشی", "امیدوار")
 DEFAULT_MOOD = "آرام"
-NEED_TEXT = "ویدیوی برش را روی پیام همان برش ریپلای کن (کپشن: رندر)، یا متن گفتار را بعد از «رندر» بنویس."
-FAILED = "ساخت ویدیو ناموفق بود؛ دوباره امتحان کن."
-ASK_TEMPLATE = "قالب؟"
-ASK_NAME = "نام مهمان؟ (ریپلای کن)"
-ASK_TITLE = "عنوان مهمان؟ (ریپلای کن)"
+NEED_TEXT = ("متن گفتار این برش پیدا نشد.\nویدیو را روی پیام پیشنهادیِ همان برش ریپلای کن و در کپشن بنویس «رندر»؛ "
+             "یا متن را بعد از «رندر» بیاور.")
+FAILED = "ساخت ویدیو انجام نشد. لطفاً دوباره امتحان کن."
+ASK_TEMPLATE = "این برش در کدام قالب ساخته شود؟"
+ASK_NAME = "نام مهمان را بنویس (روی همین پیام ریپلای کن)"
+ASK_TITLE = "عنوان یا سمت مهمان را بنویس (روی همین پیام ریپلای کن)"
+BAR_LEN = 10
+_FA = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def bar(pct: float) -> str:
+    """«▰▰▰▱▱▱▱▱▱▱ ۳۰٪»: the progress line shown while a video is being made."""
+    pct = max(0, min(100, int(pct)))
+    full = round(BAR_LEN * pct / 100)
+    return "▰" * full + "▱" * (BAR_LEN - full) + " " + f"{pct}٪".translate(_FA)
+
+
+class Progress:
+    """One message that fills up as the work advances (edits are throttled; a failed edit never matters)."""
+
+    def __init__(self, tg, chat_id: int, title: str, clock=time.monotonic):
+        self.tg, self.chat_id, self.title, self.clock = tg, chat_id, title, clock
+        self.mid, self.last, self.shown = None, 0.0, ""
+        self.set(0, "در صف شروع")
+
+    def _text(self, pct, label):
+        return f"⏳ {self.title}\n{bar(pct)}\n{label}"
+
+    def set(self, pct: float, label: str, force: bool = False) -> None:
+        text = self._text(pct, label)
+        now = self.clock()
+        if text == self.shown or (not force and self.mid is not None and now - self.last < 2.5):
+            return
+        try:
+            if self.mid is None:
+                self.mid = self.tg.send_message(self.chat_id, text)
+            else:
+                self.tg.edit_message(self.chat_id, self.mid, text)
+            self.shown, self.last = text, now
+        except Exception:  # noqa: BLE001
+            pass
+
+    def done(self, label: str = "آماده شد ✅") -> None:
+        if self.mid is not None:
+            try:
+                self.tg.edit_message(self.chat_id, self.mid, f"✅ {self.title}\n{bar(100)}\n{label}")
+            except Exception:  # noqa: BLE001
+                pass
 STATE_URL = "https://t.me/iraf_state?d="
 MAX_URL = 1900
 
@@ -185,15 +230,20 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
     import gap_render
     import music_synth
     try:
-        tg.send_message(chat_id, f"⏳ ساخت ویدیو در قالب «{TEMPLATES[st['template']]}» شروع شد (چند دقیقه)…")
+        prog = Progress(tg, chat_id, f"ساخت ویدیو · قالب «{TEMPLATES[st['template']]}»")
         workdir = Path(workdir)
+        prog.set(3, "دریافت ویدیو", force=True)
         kind, _, rid = st["ref"].partition(":") if st["ref"].startswith("drive:") else ("telegram", "", st["ref"])
         video = fetch_input(InputRef(kind, rid), tg, workdir)
+        prog.set(12, "استخراج صدا")
         audio = to_audio(video, workdir / "studio_audio.mp3")
+        prog.set(18, "زمان‌بندی کلمات")
         rows = align_client.align_words(audio, st["text"])
         if not rows:
             raise ValueError("no word times")
+        prog.set(32, "انتخاب حال‌وهوا")
         mood = choose_mood(select_client, st["text"])
+        prog.set(38, f"موسیقی زمینه · {mood}")
         try:
             channel = json.loads(Path(music_catalog).read_text(encoding="utf-8")) if Path(music_catalog).exists() else []
         except (OSError, ValueError):
@@ -201,9 +251,20 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
         music_file, music_lufs = pick_music(mood, channel, tg, workdir, gap_render.lufs_of, music_synth.compose,
                                             music_synth.MOOD_TO_PRESET)
         out = str(workdir / "studio_out.mp4")
+        prog.set(45, "طراحی زیرنویس‌ها", force=True)
         gap_render.main(str(video), st["text"], st["name"], st["title"], out, str(workdir / "render"), rows=rows,
-                        music_file=music_file, music_lufs=music_lufs, template=st["template"])
+                        music_file=music_file, music_lufs=music_lufs, template=st["template"],
+                        progress=lambda f: prog.set(50 + 42 * f, "ساخت و ترکیب ویدیو"))
+        try:  # keep the timing data of every render so a sync complaint can be checked against it
+            keep = Path(music_catalog).parent.parent / "renders"
+            keep.mkdir(parents=True, exist_ok=True)
+            safe = re.sub(r"[^0-9A-Za-z_-]", "_", st["ref"])[:40]
+            shutil.copyfile(workdir / "render" / "debug.json", keep / f"{safe}.json")
+        except OSError:
+            pass
+        prog.set(94, "ارسال ویدیو", force=True)
         tg.send_video(chat_id, out, caption=f"{st['name']} — {st['title']}\n🎵 حال‌وهوا: {mood}")
+        prog.done()
     except InputError as e:
         tg.send_message(chat_id, str(e))
     except Exception as e:  # noqa: BLE001 - always answer the user
