@@ -2,10 +2,12 @@
 chosen template (گپ / یاران خراسانی) with the guest name and title, word-synced subtitles
 and background music picked by the mood of the speech. All state lives in the bot's own
 chat messages (button → reply with the name → reply with the title), nothing is stored."""
+import base64
 import json
 import random
 import re
 import sys
+import zlib
 from pathlib import Path
 
 from media import InputError, InputRef, fetch_input, resolve_input, to_audio
@@ -18,9 +20,11 @@ MOODS = ("غمگین", "احساسی", "حماسی", "آرام", "عاشقانه
 DEFAULT_MOOD = "آرام"
 NEED_TEXT = "ویدیوی برش را روی پیام همان برش ریپلای کن (کپشن: رندر)، یا متن گفتار را بعد از «رندر» بنویس."
 FAILED = "ساخت ویدیو ناموفق بود؛ دوباره امتحان کن."
-ASK_TEMPLATE = "این برش در کدام قالب ساخته شود؟"
-ASK_NAME = "✏️ نام مهمان را روی همین پیام ریپلای کن."
-ASK_TITLE = "✏️ حالا عنوان مهمان را روی همین پیام ریپلای کن."
+ASK_TEMPLATE = "قالب؟"
+ASK_NAME = "نام مهمان؟ (ریپلای کن)"
+ASK_TITLE = "عنوان مهمان؟ (ریپلای کن)"
+STATE_URL = "https://t.me/iraf_state?d="
+MAX_URL = 1900
 
 
 def render_text(message: dict) -> str | None:
@@ -39,20 +43,43 @@ def keyboard() -> dict:
     return {"inline_keyboard": [[{"text": n, "callback_data": f"tp:{k}"} for k, n in TEMPLATES.items()]]}
 
 
-def build(header: str, st: dict) -> str:
-    lines = [f"{HEAD} {header}"]
+def _pack(st: dict) -> str:
+    raw = json.dumps(st, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(zlib.compress(raw, 9)).decode().rstrip("=")
+
+
+def _unpack(blob: str) -> dict | None:
+    try:
+        raw = zlib.decompress(base64.urlsafe_b64decode(blob + "=" * (-len(blob) % 4)))
+        st = json.loads(raw.decode("utf-8"))
+    except (ValueError, zlib.error):
+        return None
+    return st if isinstance(st, dict) and st.get("ref") and st.get("text") else None
+
+
+def build(header: str, st: dict):
+    """(text, entities): the visible message is just the question; the state hides in a link on 🎬."""
+    st = {k: (" ".join(v.split()) if k in ("text", "name", "title") else v) for k, v in st.items() if v}
+    url = STATE_URL + _pack(st)
+    if len(url) <= MAX_URL:
+        return f"{HEAD} {header}", [{"type": "text_link", "offset": 0, "length": len(HEAD.encode("utf-16-le")) // 2,
+                                      "url": url}]
+    lines = [f"{HEAD} {header}"]  # too long for a link: keep the state visible
     if st.get("template"):
         lines.append(f"قالب: {TEMPLATES[st['template']]}")
     if st.get("name"):
         lines.append(f"نام: {st['name']}")
-    lines.append("متن: " + " ".join(st["text"].split()))
-    lines.append(f"ref: {st['ref']}")
-    return "\n".join(lines)
+    lines += ["متن: " + st["text"], f"ref: {st['ref']}"]
+    return "\n".join(lines), None
 
 
-def parse(text: str) -> dict | None:
+def parse(message: dict) -> dict | None:
     """State of one of our messages, or None when it is not one."""
-    if not text or not text.startswith(HEAD):
+    for e in message.get("entities") or []:
+        if e.get("type") == "text_link" and str(e.get("url", "")).startswith(STATE_URL):
+            return _unpack(e["url"][len(STATE_URL):])
+    text = message.get("text") or ""
+    if not text.startswith(HEAD):
         return None
     st = {}
     for line in text.split("\n")[1:]:
@@ -80,8 +107,8 @@ def start(message: dict, text: str, tg) -> None:
         tg.send_message(chat_id, str(e))
         return
     key = ref.ref if ref.kind == "telegram" else "drive:" + ref.ref
-    tg.send_message(chat_id, build(ASK_TEMPLATE, {"text": text, "ref": key}),
-                    reply_markup=keyboard(), reply_to=message.get("message_id"))
+    body, ents = build(ASK_TEMPLATE, {"text": text, "ref": key})
+    tg.send_message(chat_id, body, reply_markup=keyboard(), reply_to=message.get("message_id"), entities=ents)
 
 
 def handle_callback(cb: dict, cfg, tg) -> bool:
@@ -92,12 +119,13 @@ def handle_callback(cb: dict, cfg, tg) -> bool:
     msg = cb.get("message") or {}
     chat_id = msg.get("chat", {}).get("id")
     key = data[3:]
-    st = parse(msg.get("text"))
+    st = parse(msg)
     if chat_id not in cfg.allowed_chat_ids or st is None or key not in TEMPLATES:
         return True
     st["template"] = key
     try:
-        tg.edit_message(chat_id, msg["message_id"], build(ASK_NAME, st), reply_markup={"inline_keyboard": []})
+        body, ents = build(ASK_NAME, st)
+        tg.edit_message(chat_id, msg["message_id"], body, reply_markup={"inline_keyboard": []}, entities=ents)
         tg.answer_callback(cb["id"])
     except Exception:  # noqa: BLE001 - a stale button must never crash the bot
         pass
@@ -107,14 +135,15 @@ def handle_callback(cb: dict, cfg, tg) -> bool:
 def handle_reply(message: dict, cfg, tg, make) -> bool:
     """A reply to one of our questions: first the name, then the title (which renders)."""
     prev = message.get("reply_to_message") or {}
-    st = parse(prev.get("text"))
+    st = parse(prev)
     answer = (message.get("text") or "").strip()
     if st is None or not st.get("template") or not answer:
         return False
     chat_id = message["chat"]["id"]
     if not st.get("name"):
         st["name"] = " ".join(answer.split())
-        tg.send_message(chat_id, build(ASK_TITLE, st), reply_to=message.get("message_id"))
+        body, ents = build(ASK_TITLE, st)
+        tg.send_message(chat_id, body, reply_to=message.get("message_id"), entities=ents)
         return True
     st["title"] = " ".join(answer.split())
     make(chat_id, st)
