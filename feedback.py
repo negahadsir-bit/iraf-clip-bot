@@ -16,19 +16,27 @@ def cats_mask(cats) -> int:
     return sum(1 << i for i in set(cats) if 0 <= i < len(CATS))
 
 
+MAKE_BTN = {"text": "🎬 تولید ویدیو", "callback_data": "mk"}
+
+
+def with_make(rows: list) -> dict:
+    """Every clip keeps its «تولید ویدیو» button, whatever else is pressed."""
+    return {"inline_keyboard": [*rows, [MAKE_BTN]]}
+
+
 def clip_keyboard(cats) -> dict:
     """👍/👎 under a clip; the interview's categories ride along in the button data (stateless)."""
     m = cats_mask(cats)
-    return {"inline_keyboard": [[{"text": "👍 خوب بود", "callback_data": f"f+{m}"},
-                                 {"text": "👎 ضعیف بود", "callback_data": f"f-{m}"}]]}
+    return with_make([[{"text": "👍 خوب بود", "callback_data": f"f+{m}"},
+                       {"text": "👎 ضعیف بود", "callback_data": f"f-{m}"}]])
 
 
 def viral_keyboard(good: bool, mask: int) -> dict:
     """Second step, shown after 👍/👎: does this clip have viral potential, by the user's experience?"""
     g = "+" if good else "-"
-    return {"inline_keyboard": [[{"text": "🚀 وایرال می‌شد", "callback_data": f"v{g}{mask}y"},
-                                 {"text": "🧊 وایرال نمی‌شد", "callback_data": f"v{g}{mask}n"}],
-                                [{"text": "⏭ رد کردن", "callback_data": f"v{g}{mask}s"}]]}
+    return with_make([[{"text": "🚀 وایرال می‌شد", "callback_data": f"v{g}{mask}y"},
+                       {"text": "🧊 وایرال نمی‌شد", "callback_data": f"v{g}{mask}n"}],
+                      [{"text": "⏭ رد کردن", "callback_data": f"v{g}{mask}s"}]])
 
 
 def reason_prompt(cats, dialogue: str) -> str:
@@ -114,7 +122,7 @@ def handle_feedback(cb: dict, cfg, tg, path: Path | None) -> bool:
         _edit(tg, chat_id, msg, viral_keyboard(good, mask))
         _answer(tg, cb, "ثبت شد؛ حالا وایرال بودنش؟")
     else:  # a weak clip is obviously not viral: no second question
-        _edit(tg, chat_id, msg, {"inline_keyboard": [[{"text": "✅ ثبت شد 👎", "callback_data": DONE}]]})
+        _edit(tg, chat_id, msg, with_make([[{"text": "✅ ثبت شد 👎", "callback_data": DONE}]]))
         _answer(tg, cb)
         try:  # ask why: the answer is optional and becomes part of what the bot learns from
             tg.send_message(chat_id, reason_prompt(cats, dialogue), reply_to=msg.get("message_id"),
@@ -139,7 +147,7 @@ def _handle_viral(cb: dict, cfg, tg, path: Path | None, v) -> bool:
         except OSError:
             pass
     mark = {"y": " 🚀", "n": " 🧊", "s": ""}[answer]
-    _edit(tg, chat_id, msg, {"inline_keyboard": [[{"text": "✅ ثبت شد " + ("👍" if good else "👎") + mark,
-                                                  "callback_data": DONE}]]})
+    _edit(tg, chat_id, msg, with_make([[{"text": "✅ ثبت شد " + ("👍" if good else "👎") + mark,
+                                         "callback_data": DONE}]]))
     _answer(tg, cb)
     return True
