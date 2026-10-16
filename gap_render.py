@@ -38,6 +38,19 @@ def run(*a):
     subprocess.run(a, check=True)
 
 
+def run_ffmpeg(total, progress, *cmd):
+    """Runs ffmpeg; calls progress(0..1) as the output time advances (ffmpeg -progress pipe:1)."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
+    for line in p.stdout:
+        if progress and line.startswith("out_time_us=") and total:
+            try:
+                progress(min(1.0, int(line.split("=")[1]) / 1e6 / total))
+            except ValueError:
+                pass
+    if p.wait():
+        raise subprocess.CalledProcessError(p.returncode, cmd[0])
+
+
 def probe_len(path):
     return float(json.loads(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path]))["format"]["duration"])
@@ -213,21 +226,25 @@ def music_inputs(music_file, music_lufs, video, L):
 
 
 def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_file=None, music_lufs=None,
-         template="gap"):
+         template="gap", progress=None):
     os.makedirs(work, exist_ok=True)
     L = probe_len(video)
     x = wt.load_audio(video, f"{work}/a.wav")
     chunks = wt.speech_chunks(x)
+    anchors = []
     if rows:  # real word times (Gemini), fixed against the audio
         words = text.split()
         t0 = wt.rows_to_words(words, rows)
-        t1, _ = wt.lock_to_pauses(t0, chunks)
+        t1, anchors = wt.lock_to_pauses(t0, chunks)
         times = wt.from_gemini([{"start": a, "end": b} for a, b in t1], chunks)
     else:
         words = text.split()
         times = wt.align_acoustic(words, chunks, x)
     sched = caption_schedule(group_words(words, times), L)
     json.dump(sched, open(f"{work}/schedule.json", "w"), ensure_ascii=False, indent=1)
+    json.dump({"length": L, "chunks": [[round(float(p), 3), round(float(q), 3)] for p, q in chunks],
+               "rows": rows, "anchors": [[round(float(p), 3), round(float(q), 3)] for p, q in (anchors if rows else [])],
+               "schedule": sched}, open(f"{work}/debug.json", "w"), ensure_ascii=False)
     render_layers(work, f"{guest} / {title}", sched)
     bf, ox, oy = badge_filter(L, template)
     fc = (bf + f";[0:v]scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,"
@@ -241,7 +258,7 @@ def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_
                                  video, L)
         fc += ";" + af
         amap = ["-map", "[aout]"]
-    run("ffmpeg", "-y", "-loglevel", "error", "-i", video, "-c:v", "libvpx-vp9", "-i", os.path.join(HERE, TEMPLATES[template]["file"]),
+    run_ffmpeg(L, progress, "ffmpeg", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-i", video, "-c:v", "libvpx-vp9", "-i", os.path.join(HERE, TEMPLATES[template]["file"]),
         "-loop", "1", "-i", f"{work}/static.png", "-f", "concat", "-safe", "0", "-i", f"{work}/caps.txt", *extra,
         "-filter_complex", fc, "-map", "[v]", *amap, "-t", f"{L:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
