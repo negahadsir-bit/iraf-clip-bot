@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import subprocess
 import uuid
 import urllib.request
 from pathlib import Path
@@ -97,7 +98,10 @@ class Telegram:
         try:
             if file_path.startswith("/"):  # local server: the file already sits on this machine
                 src = Path(self._data) / Path(file_path).relative_to(LOCAL_ROOT) if self._data else Path(file_path)
-                shutil.copyfile(src, dest)
+                try:
+                    shutil.copyfile(src, dest)
+                except OSError:  # owned by the server's user inside the container: copy it out through docker
+                    subprocess.run(["docker", "cp", f"tgapi:{file_path}", str(dest)], check=True)
                 return
             with urllib.request.urlopen(f"{self._base}/file/bot{self._token}/{file_path}",
                                         timeout=120) as r:
