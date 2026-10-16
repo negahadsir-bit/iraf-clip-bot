@@ -44,6 +44,31 @@ def speech_chunks(x: np.ndarray, min_pause: float = 0.22, hop_s: float = 0.02):
     return chunks
 
 
+def refine_chunks(x: np.ndarray, chunks, frac: float = 0.3, hold: float = 0.06, hop_s: float = 0.01):
+    """Speech chunks with their start moved to the first moment the band energy stays above `frac` of the
+    chunk's own level for `hold` seconds. The pause detector also keeps breaths and room noise next to
+    the speech, so a chunk can start half a second before the first word is heard, and captions locked
+    to that start would come up ahead of the voice."""
+    _, env = syllable_peaks(x, hop_s)
+    k = max(1, int(round(hold / hop_s)))
+    out = []
+    for a, b in chunks:
+        i0, i1 = int(a / hop_s), min(len(env), int(b / hop_s) + 1)
+        seg = env[i0:i1]
+        if len(seg) < 3 * k:
+            out.append((a, b))
+            continue
+        above = (seg > frac * np.percentile(seg, 90)).astype(int)
+        run = np.convolve(above, np.ones(k, dtype=int), mode="valid") == k  # k frames in a row
+        idx = np.flatnonzero(run)
+        if len(idx) == 0:
+            out.append((a, b))
+            continue
+        s = (i0 + idx[0]) * hop_s
+        out.append((max(a, s), b) if b - s >= 0.1 else (a, b))  # only the start: a caption stays until the next one
+    return out
+
+
 def _weight(word: str) -> float:
     return 1.5 + len(re.sub(r"[^\w]", "", word))
 
