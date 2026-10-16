@@ -19,16 +19,19 @@ BUDGET_SECONDS = 5 * 60
 MEMORY = Path(__file__).parent / "memory" / "labels.jsonl"
 FEEDBACK = MEMORY.parent / "feedback.jsonl"
 MUSIC = MEMORY.parent / "music" / "catalog.json"
+PENDING = MEMORY.parent / "pending.json"  # the clip whose «تولید ویدیو» button was pressed, waiting for its video
 
 
 def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=None,
-                  words=None, music_path=None, make=None) -> int:
+                  words=None, music_path=None, make=None, pending_path=None) -> int:
     """Handle one update; returns next offset. A file/link is first answered with the
     category question (nothing slow happens yet). Pressing «شروع» runs the work; the
     offset is committed right before that, so a crashed run never repeats the same file."""
     nxt = update["update_id"] + 1
     if update.get("callback_query"):
         if studio.handle_callback(update["callback_query"], cfg, tg):
+            return nxt
+        if pending_path is not None and studio.handle_make(update["callback_query"], cfg, tg, pending_path):
             return nxt
         handle_callback(update["callback_query"], cfg, tg, process_fn,
                         commit=(lambda: commit(nxt)) if commit else None,
@@ -51,6 +54,10 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=
     rtext = studio.render_text(msg)
     if rtext is not None:  # caption «رندر»: ask which template
         studio.start(msg, rtext, tg)
+        return nxt
+    waiting = studio.take_pending(pending_path, msg) if pending_path is not None else None
+    if waiting:  # the video of the clip we asked for: go on with template, name and title
+        studio.start(msg, waiting, tg)
         return nxt
     text = words_text(msg)
     if text is not None and words is not None:  # caption «words»: word times for subtitles
@@ -104,7 +111,7 @@ def main() -> int:
                         pass
 
                 offset = handle_update(u, cfg, tg, lambda m, cats: process(m, deps, cats), commit=commit,
-                                       feedback_path=FEEDBACK, music_path=MUSIC,
+                                       feedback_path=FEEDBACK, music_path=MUSIC, pending_path=PENDING,
                                        make=lambda cid, st: studio.make_video(cid, st, tg, t_client, s_client,
                                                                               Path(d), MUSIC),
                                        words=lambda m, t: run_words(m, t, tg, t_client, Path(d), MEMORY.parent))
