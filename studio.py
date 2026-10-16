@@ -16,7 +16,7 @@ _LINK = re.compile(r"https?://\S*drive\.google\.com\S*")
 _TRIGGER = re.compile(r"(?is)^\s*(?:رندر|render)(?=\s|$)\s*(.*)$")
 MOODS = ("غمگین", "احساسی", "حماسی", "آرام", "عاشقانه", "نوستالژیک", "انگیزشی", "امیدوار")
 DEFAULT_MOOD = "آرام"
-NEED_TEXT = "متن برش را بعد از «رندر» در کپشن بنویس (همان گفتار برش)."
+NEED_TEXT = "ویدیوی برش را روی پیام همان برش ریپلای کن (کپشن: رندر)، یا متن گفتار را بعد از «رندر» بنویس."
 FAILED = "ساخت ویدیو ناموفق بود؛ دوباره امتحان کن."
 ASK_TEMPLATE = "این برش در کدام قالب ساخته شود؟"
 ASK_NAME = "✏️ نام مهمان را روی همین پیام ریپلای کن."
@@ -27,6 +27,12 @@ def render_text(message: dict) -> str | None:
     """The clip text when the caption starts with «رندر»; None for any other message."""
     m = _TRIGGER.match(message.get("caption") or message.get("text") or "")
     return _LINK.sub(" ", m.group(1)).strip() if m else None
+
+
+def reply_dialogue(message: dict) -> str:
+    """The clip's speech from the suggestion message this video replies to (the text inside «…»)."""
+    m = re.search(r"«(.+)»", (message.get("reply_to_message") or {}).get("text") or "", re.S)
+    return " ".join(m.group(1).split()) if m else ""
 
 
 def keyboard() -> dict:
@@ -64,6 +70,7 @@ def parse(text: str) -> dict | None:
 
 def start(message: dict, text: str, tg) -> None:
     chat_id = message["chat"]["id"]
+    text = text or reply_dialogue(message)
     if not text:
         tg.send_message(chat_id, NEED_TEXT)
         return
