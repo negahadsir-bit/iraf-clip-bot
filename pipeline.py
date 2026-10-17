@@ -11,6 +11,7 @@ from memory import examples_note, save_interview
 from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
+from verify import verify_clips
 from polish import polish_edges
 from refine import refine_clips
 from silence import detect_silences, drop_overlaps, snap_to_silence
@@ -97,6 +98,11 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
                                  deps.workdir)
         except Exception as e:  # noqa: BLE001
             print(f"polish skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+        try:  # double-check clips whose place is doubtful (unconfirmed edges, end of the file)
+            clips = verify_clips(clips, audio, audio_seconds(audio), deps.transcribe_client,
+                                 deps.workdir)
+        except Exception as e:  # noqa: BLE001
+            print(f"verify skipped: {type(e).__name__}", file=sys.stderr, flush=True)
         try:  # then pull edges to real pauses in the audio
             clips = snap_to_silence(clips, detect_silences(audio))
         except Exception as e:  # noqa: BLE001 - never lose clips over a refinement step
