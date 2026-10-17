@@ -242,8 +242,7 @@ def lufs_of(path):
     return float(m[-1]) if m else -23.0
 
 
-FADE = 1.6  # the end fades out (picture to black, sound to silence) once the last word is said
-FADE_GAP = 0.15  # the fade starts this long after the last word ends
+# The clip ends exactly where it ends: no frozen last frame, no fade-out, no extra seconds.
 
 
 FADE_IN = 0.4  # the first caption eases in instead of popping onto the screen
@@ -254,27 +253,15 @@ def cap_fade(sched):
     return "" if first is None else f",fade=t=in:st={first:.3f}:d={FADE_IN}:alpha=1"
 
 
-def plan_end(L, last_end):
-    """(total length, fade start): the fade begins after the last spoken word; when the clip ends right on
-    the last word, the length grows so the fade happens on a held last frame instead of eating the sentence."""
-    start = max(last_end + FADE_GAP, L - FADE, 0.0)
-    return max(L, start + FADE), start
-
-
-def afade_out(start):
-    return f"afade=t=out:st={start:.3f}:d={FADE:.3f}"
-
-
 MUSIC_BELOW = 5.0  # dB under the speech loudness: heard, never competing with the voice
 
 
-def music_inputs(music_file, music_lufs, video, L, fade_start, ext=0.0):
+def music_inputs(music_file, music_lufs, video, L):
     """(extra ffmpeg inputs, filter for [aout]) mixing the track low and constant under the speech."""
     gain = lufs_of(video) - MUSIC_BELOW - music_lufs
     f = (f"[4:a]aloop=loop=-1:size=2e9,atrim=0:{L:.3f},volume={gain:.1f}dB,"
          f"afade=t=in:d=0.5[mus];"
-         f"[0:a]apad=pad_dur={ext:.3f}[va];"
-         f"[va][mus]amix=inputs=2:duration=first:normalize=0,{afade_out(fade_start)}[aout]")
+         f"[0:a][mus]amix=inputs=2:duration=first:normalize=0[aout]")
     return ["-i", music_file], f
 
 
@@ -293,9 +280,6 @@ def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_
     else:
         words = text.split()
         times = wt.align_acoustic(words, chunks, x)
-    L_media = L
-    L, fade_start = plan_end(L_media, max((b for a, b in times), default=0.0))
-    ext = L - L_media  # the picture is held this long after the clip so the last words are not cut by the fade
     sched = caption_schedule(group_words(words, times), L)
     json.dump(sched, open(f"{work}/schedule.json", "w"), ensure_ascii=False, indent=1)
     json.dump({"length": L, "chunks": [[round(float(p), 3), round(float(q), 3)] for p, q in chunks],
@@ -304,14 +288,13 @@ def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_
     render_layers(work, f"{guest} / {title}", sched)
     bf, ox, oy = badge_filter(L, template)
     fc = (bf + f";[0:v]scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,"
-          f"fps={FPS}{f',tpad=stop_mode=clone:stop_duration={ext:.3f}' if ext > 0 else ''},format=yuv420p[bg];[bg][2:v]overlay=0:0:eof_action=pass[a];"
+          f"fps={FPS},format=yuv420p[bg];[bg][2:v]overlay=0:0:eof_action=pass[a];"
           f"[3:v]fps={FPS},format=rgba{cap_fade(sched)}[caps];[a][caps]overlay=0:0:eof_action=pass[b];"
-          f"[b][badge]overlay={ox}:{oy}:eof_action=pass,format=yuv420p,"
-          f"fade=t=out:st={fade_start:.3f}:d={FADE:.3f}[v]")
-    extra, amap = [], ["-map", "0:a?", "-af", f"apad=pad_dur={ext:.3f}," + afade_out(fade_start)]
+          f"[b][badge]overlay={ox}:{oy}:eof_action=pass,format=yuv420p[v]")
+    extra, amap = [], ["-map", "0:a?"]
     if music_file:
         extra, af = music_inputs(music_file, music_lufs if music_lufs is not None else lufs_of(music_file),
-                                 video, L, fade_start, ext)
+                                 video, L)
         fc += ";" + af
         amap = ["-map", "[aout]"]
     run_ffmpeg(L, progress, "ffmpeg", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-i", video, "-c:v", "libvpx-vp9", "-i", os.path.join(HERE, TEMPLATES[template]["file"]),
