@@ -24,8 +24,8 @@ NEED_TEXT = ("متن گفتار این برش پیدا نشد.\nویدیو را 
              "یا متن را بعد از «رندر» بیاور.")
 FAILED = "ساخت ویدیو انجام نشد. لطفاً دوباره امتحان کن."
 ASK_TEMPLATE = "این برش در کدام قالب ساخته شود؟"
-ASK_NAME = "نام مهمان را بنویس (روی همین پیام ریپلای کن)"
-ASK_TITLE = "عنوان یا سمت مهمان را بنویس (روی همین پیام ریپلای کن)"
+ASK_NAME = "نام مهمان را بنویس"
+ASK_TITLE = "عنوان یا سمت مهمان را بنویس"
 BAR_LEN = 10
 _FA = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
@@ -223,7 +223,7 @@ def start(message: dict, text: str, tg) -> None:
     tg.send_message(chat_id, body, reply_markup=keyboard(), reply_to=message.get("message_id"), entities=ents)
 
 
-def handle_callback(cb: dict, cfg, tg) -> bool:
+def handle_callback(cb: dict, cfg, tg, ask_path=None) -> bool:
     """«tp:<template>» buttons; True when the callback was ours."""
     data = cb.get("data", "")
     if not data.startswith("tp:"):
@@ -238,27 +238,72 @@ def handle_callback(cb: dict, cfg, tg) -> bool:
     try:
         body, ents = build(ASK_NAME, st)
         tg.edit_message(chat_id, msg["message_id"], body, reply_markup={"inline_keyboard": []}, entities=ents)
+        remember_ask(ask_path, chat_id, st)
         tg.answer_callback(cb["id"])
     except Exception:  # noqa: BLE001 - a stale button must never crash the bot
         pass
     return True
 
 
-def handle_reply(message: dict, cfg, tg, make) -> bool:
+def remember_ask(path, chat_id, st: dict) -> None:
+    """The question we are waiting an answer to (name or title), so a plain message without
+    «reply» is still understood as the answer."""
+    if path is None:
+        return
+    data = _load_pending(path)
+    data[str(chat_id)] = {"st": st, "at": time.time()}
+    _save_pending(path, data)
+
+
+def forget_ask(path, chat_id) -> None:
+    if path is None:
+        return
+    data = _load_pending(path)
+    if data.pop(str(chat_id), None) is not None:
+        _save_pending(path, data)
+
+
+def _advance(chat_id, st: dict, answer: str, reply_to, tg, make, ask_path) -> None:
+    """One answer moves the render forward: first the name, then the title (which renders)."""
+    if not st.get("name"):
+        st["name"] = " ".join(answer.split())
+        body, ents = build(ASK_TITLE, st)
+        remember_ask(ask_path, chat_id, st)
+        tg.send_message(chat_id, body, reply_to=reply_to, entities=ents)
+        return
+    st["title"] = " ".join(answer.split())
+    forget_ask(ask_path, chat_id)
+    make(chat_id, st)
+
+
+def handle_reply(message: dict, cfg, tg, make, ask_path=None) -> bool:
     """A reply to one of our questions: first the name, then the title (which renders)."""
     prev = message.get("reply_to_message") or {}
     st = parse(prev)
     answer = (message.get("text") or "").strip()
     if st is None or not st.get("template") or not answer:
         return False
-    chat_id = message["chat"]["id"]
-    if not st.get("name"):
-        st["name"] = " ".join(answer.split())
-        body, ents = build(ASK_TITLE, st)
-        tg.send_message(chat_id, body, reply_to=message.get("message_id"), entities=ents)
-        return True
-    st["title"] = " ".join(answer.split())
-    make(chat_id, st)
+    _advance(message["chat"]["id"], st, answer, message.get("message_id"), tg, make, ask_path)
+    return True
+
+
+_MEDIA = ("video", "document", "audio", "voice", "photo", "video_note", "animation")
+
+
+def handle_loose(message: dict, cfg, tg, make, ask_path) -> bool:
+    """A plain text (no reply needed) answers the question we asked last, for up to PENDING_TTL."""
+    chat_id = message.get("chat", {}).get("id")
+    text = (message.get("text") or "").strip()
+    if ask_path is None or not text or any(k in message for k in _MEDIA) or _LINK.search(text) \
+            or "http" in text or _TRIGGER.match(text):
+        return False
+    item = _load_pending(ask_path).get(str(chat_id))
+    if not item or time.time() - item.get("at", 0) > PENDING_TTL or not isinstance(item.get("st"), dict):
+        return False
+    st = item["st"]
+    if not st.get("template") or not st.get("ref") or not st.get("text"):
+        return False
+    _advance(chat_id, dict(st), text, message.get("message_id"), tg, make, ask_path)
     return True
 
 
