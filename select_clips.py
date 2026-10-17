@@ -125,6 +125,54 @@ def _fit_end(sentences: list[Sentence], a: int, b: int, punctuated: bool = True)
     return b
 
 
+REVIEW_SPAN = 4  # sentences either side of a clip shown to the boundary reviewer
+
+
+def _review_prompt(cands, sentences) -> str:
+    blocks = []
+    for i, (rank, a, b, reason, top) in enumerate(cands):
+        lo, hi = max(0, a - REVIEW_SPAN), min(len(sentences) - 1, b + REVIEW_SPAN)
+        lines = [f"[{k}] ({round(sentences[k].end - sentences[k].start)}ث) {sentences[k].text}"
+                 for k in range(lo, hi + 1)]
+        blocks.append(f"برش {i}: فعلاً از [{a}] تا [{b}]\n" + "\n".join(lines))
+    return (
+        "تو ویراستار مرز برش‌های ویدیویی هستی. گفتار فارسی افغانستانی (دری) است و ممکن است متن "
+        "غلط املایی داشته باشد؛ معنا را با لهجه‌ی دری بفهم. برای هر برش بهترین جمله‌ی شروع و پایان را "
+        "از میان جمله‌های نشان‌داده‌شده انتخاب کن:\n"
+        "- شروع باید جمله‌ای باشد که فکر یا پاسخ یا روایت را از اول و مستقل باز می‌کند؛ نه ادامه‌ی "
+        "جمله‌ی قبل، نه وابسته به «این/آن/اون» بدون مرجع، نه سؤال مجری، نه «خب/ببین» بی‌محتوا.\n"
+        "- پایان باید جمله‌ای باشد که همان فکر را کامل و قانع‌کننده می‌بندد (نتیجه، پانچ یا اوج)؛ "
+        "هرگز وسط جمله یا وسط استدلال و هرگز قبل از رسیدن به نتیجه.\n"
+        "- مدت کل از شروع جمله‌ی from تا پایان جمله‌ی to بین ۲۰ و ۷۰ ثانیه باشد؛ ترجیحاً ۳۵ تا ۶۰.\n"
+        "- فقط جمله‌های نشان‌داده‌شده مجازند و محتوای برش نباید عوض شود. اگر مرز فعلی خوب است همان را بده.\n"
+        'فقط JSON برگردان: [{"clip": شماره‌ی برش, "from": شماره‌ی جمله, "to": شماره‌ی جمله}, ...]\n\n'
+        + "\n\n".join(blocks))
+
+
+def review_boundaries(cands, sentences, client):
+    """Ask the model to re-check every clip's first/last sentence; keep only safe changes."""
+    if not cands:
+        return cands
+    raw = client.generate_json(_review_prompt(cands, sentences))
+    if not isinstance(raw, list):
+        return cands
+    out = [list(c) for c in cands]
+    n = len(sentences)
+    for d in raw:
+        try:
+            i, a, b = int(d["clip"]), int(d["from"]), int(d["to"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (0 <= i < len(out)):
+            continue
+        old_a, old_b = out[i][1], out[i][2]
+        lo, hi = max(0, old_a - REVIEW_SPAN), min(n - 1, old_b + REVIEW_SPAN)
+        if not (lo <= a <= b <= hi) or not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):
+            continue
+        out[i][1], out[i][2] = a, b
+    return out
+
+
 def select_clips(sentences: list[Sentence], rules: str, client,
                  want: int = 10, focus=(), examples: str = "") -> list[Clip]:
     note = focus_note(focus)
@@ -141,7 +189,7 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         raise SelectionError("not a list")
     n = len(sentences)
     punctuated = _punctuated(sentences)
-    clips = []
+    cands = []
     drops = {"bad_index": 0, "bad_length": 0, "overlap": 0}
     for d in sorted(raw, key=lambda d: d.get("rank", 0) if isinstance(d, dict) else 0):
         try:
@@ -155,8 +203,17 @@ def select_clips(sentences: list[Sentence], rules: str, client,
         if punctuated:
             a = _snap_start(sentences, a, b)
         b = _fit_end(sentences, a, b, punctuated)
+        cands.append([rank, a, b, reason, d.get("top") is True])
+    try:  # a second, focused look at every clip's first and last sentence
+        cands = review_boundaries(cands, sentences, client)
+    except (BusyError, QuotaError):
+        raise
+    except Exception as e:  # noqa: BLE001 - the first pick is still usable
+        print(f"boundary review skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+    clips = []
+    for rank, a, b, reason, top in cands:
         c = Clip(rank, sentences[a].start, sentences[b].end, reason,
-                 " ".join(s.text for s in sentences[a:b + 1]), d.get("top") is True)
+                 " ".join(s.text for s in sentences[a:b + 1]), top)
         if not (MIN_DUR <= _dur(sentences, a, b) <= MAX_DUR):
             drops["bad_length"] += 1
             continue
