@@ -1,0 +1,8 @@
+g1	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g1.mp3
+g2	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g2.mp3
+g3	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g3.mp3
+g4	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g4.mp3
+g5	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g5.mp3
+g6	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g6.mp3
+g7	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g7.mp3
+g8	https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/fe24492c221c76f1015021828de278c72421aed7/teaser/g8.mp3
