@@ -356,20 +356,29 @@ def fix_text(client, text: str) -> str:
     return " ".join(out)
 
 
-def pick_music(mood: str, channel_rows: list, tg, workdir: Path, lufs_of, rng=random):
-    """(file, lufs) of a track from the channel's own catalog: one tagged with the mood, else
-    any other; (None, None) when the catalog has nothing (no music is ever synthesized)."""
-    usable = [r for r in channel_rows if r.get("file_id")]
+def _fetch_url(url: str, dest: Path) -> None:
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=120) as r:
+        Path(dest).write_bytes(r.read())
+
+
+def pick_music(mood: str, channel_rows: list, tg, workdir: Path, lufs_of, rng=random, fetch=_fetch_url):
+    """(file, lufs) of a track from our own library (channel posts and bundled files): one tagged
+    with the mood, else any other; (None, None) when nothing is usable. Music is never synthesized."""
+    usable = [r for r in channel_rows if r.get("file_id") or r.get("url")]
     ordered = [r for r in usable if mood in r.get("tags", [])] or usable
     rows = list(ordered)
     rng.shuffle(rows)
     for row in rows:
         try:
             dest = Path(workdir) / "music_in.mp3"
-            tg.download(tg.get_file_path(row["file_id"]), dest)
+            if row.get("url"):
+                fetch(row["url"], dest)
+            else:
+                tg.download(tg.get_file_path(row["file_id"]), dest)
             return str(dest), lufs_of(str(dest))
         except Exception as e:  # noqa: BLE001
-            print(f"channel track failed: {type(e).__name__}", file=sys.stderr, flush=True)
+            print(f"music track failed: {type(e).__name__}", file=sys.stderr, flush=True)
     return None, None
 
 
@@ -396,7 +405,9 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
             channel = json.loads(Path(music_catalog).read_text(encoding="utf-8")) if Path(music_catalog).exists() else []
         except (OSError, ValueError):
             channel = []
-        music_file, music_lufs = pick_music(mood, channel, tg, workdir, gap_render.lufs_of)
+        import music_bundled
+        music_file, music_lufs = pick_music(mood, [*channel, *music_bundled.ROWS], tg, workdir,
+                                            gap_render.lufs_of)
         out = str(workdir / "studio_out.mp4")
         prog.set(45, "طراحی زیرنویس‌ها", force=True)
         gap_render.main(str(video), st["text"], st["name"], st["title"], out, str(workdir / "render"), rows=rows,
