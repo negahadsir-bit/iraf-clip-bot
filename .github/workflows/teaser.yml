@@ -1,0 +1,34 @@
+name: teaser-transcribe
+on:
+  push:
+    paths: [".github/workflows/teaser.yml", "teaser/list.txt"]
+concurrency:
+  group: teaser
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pip install -r requirements.txt
+      - run: python teaser/transcribe_all.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Save transcripts
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain teaser/out)" ]; then
+            git config user.name "clip-bot"
+            git config user.email "clip-bot@users.noreply.github.com"
+            git add teaser/out
+            git commit -m "teaser: transcripts"
+            git pull --rebase -q || true
+            git push || true
+          fi
