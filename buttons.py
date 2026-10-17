@@ -11,7 +11,7 @@ def keyboard(selected) -> dict:
     sel = set(selected)
     btn = [{"text": (MARK if i in sel else "") + name, "callback_data": f"t{i}"}
            for i, name in enumerate(CATS)]
-    return {"inline_keyboard": [btn[:2], btn[2:], [{"text": "▶️ شروع بررسی", "callback_data": GO}]]}
+    return {"inline_keyboard": [btn[:2], btn[2:4], btn[4:], [{"text": "▶️ شروع بررسی", "callback_data": GO}]]}
 
 
 def selected_from(markup: dict | None) -> set[int]:
