@@ -18,8 +18,8 @@ TEMPLATES = {"gap": "گپ", "yaran": "یاران خراسانی"}
 HEAD = "🎬"
 _LINK = re.compile(r"https?://\S*drive\.google\.com\S*")
 _TRIGGER = re.compile(r"(?is)^\s*(?:رندر|render)(?=\s|$)\s*(.*)$")
-MOODS = ("غمگین", "احساسی", "حماسی", "آرام", "عاشقانه", "نوستالژیک", "انگیزشی", "امیدوار")
-DEFAULT_MOOD = "آرام"
+MOODS = ("غمگین", "احساسی", "حماسی", "ریتمیک", "هیجانی", "سوزناک", "آرام", "عاشقانه", "نوستالژیک", "انگیزشی", "امیدوار")
+DEFAULT_MOOD = "احساسی"
 NEED_TEXT = ("متن گفتار این برش پیدا نشد.\nویدیو را روی پیام پیشنهادیِ همان برش ریپلای کن و در کپشن بنویس «رندر»؛ "
              "یا متن را بعد از «رندر» بیاور.")
 FAILED = "ساخت ویدیو انجام نشد. لطفاً دوباره امتحان کن."
@@ -308,7 +308,8 @@ def handle_loose(message: dict, cfg, tg, make, ask_path) -> bool:
 
 
 def choose_mood(client, text: str) -> str:
-    prompt = ("حال‌وهوای این گفتار را برای انتخاب موسیقی زمینه تعیین کن. فقط یکی از این‌ها: "
+    prompt = ("حال‌وهوای این گفتار را برای انتخاب موسیقی زمینه تعیین کن. موسیقی ویدیوها باید پرانرژی و "
+              "احساسی باشد؛ «آرام» را فقط وقتی انتخاب کن که گفتار واقعاً آرام و بی‌هیجان است. فقط یکی از این‌ها: "
               + "، ".join(MOODS) + f"\nگفتار:\n{text}\n"
               'فقط JSON برگردان: [{"mood": "..."}]')
     try:
@@ -318,6 +319,41 @@ def choose_mood(client, text: str) -> str:
         print(f"mood fallback: {type(e).__name__}", file=sys.stderr, flush=True)
         return DEFAULT_MOOD
     return mood if mood in MOODS else DEFAULT_MOOD
+
+
+_FIX_PROMPT = ("این متن گفتار فارسی محاوره‌ای (با لهجه) است که از روی صدا نوشته شده و ممکن است چند کلمه‌ی "
+               "غلط یا بی‌معنی داشته باشد (مثلاً «خوفی» به جای «خوشی» یا «خود خو» به جای «خودتو»). فقط غلط‌های "
+               "بدیهی را با نزدیک‌ترین کلمه‌ی درست و هم‌صدا اصلاح کن. جمله‌ها را بازنویسی نکن، کلمه‌ی اضافه نیاور و "
+               "چیزی را حذف نکن؛ علائم نگارشی سر جایش بماند. اگر مطمئن نیستی، کلمه را همان‌طور بگذار.\n"
+               "متن:\n%s\nفقط JSON برگردان: [{\"text\": \"متن اصلاح‌شده\"}]")
+MAX_FIXED = 0.15  # more changed words than this share means the model rewrote the text: keep the original
+
+
+def fix_text(client, text: str) -> str:
+    """Obvious mis-heard words corrected; anything doubtful stays as it was (captions must match the voice)."""
+    from difflib import SequenceMatcher
+    words = text.split()
+    try:
+        rows = client.generate_json(_FIX_PROMPT % text)
+        new = str(rows[0].get("text", "")).split()
+    except Exception as e:  # noqa: BLE001 - a spelling pass is never worth failing the video
+        print(f"text fix skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+        return text
+    if not new:
+        return text
+    out, changed = [], 0
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, words, new, autojunk=False).get_opcodes():
+        if tag == "equal":
+            out += words[i1:i2]
+        elif (tag == "replace" and i2 - i1 <= 2 and j2 - j1 <= 2
+              and SequenceMatcher(None, "".join(words[i1:i2]), "".join(new[j1:j2])).ratio() >= 0.45):
+            out += new[j1:j2]
+            changed += i2 - i1
+        else:
+            out += words[i1:i2]
+    if changed > max(3, len(words) * MAX_FIXED):
+        return text
+    return " ".join(out)
 
 
 def pick_music(mood: str, channel_rows: list, tg, workdir: Path, lufs_of, compose, presets, rng=random):
@@ -331,7 +367,8 @@ def pick_music(mood: str, channel_rows: list, tg, workdir: Path, lufs_of, compos
             return str(dest), lufs_of(str(dest))
         except Exception as e:  # noqa: BLE001
             print(f"channel track failed, composing: {type(e).__name__}", file=sys.stderr, flush=True)
-    preset = presets.get(mood, "calm_ambient")
+    choice = presets.get(mood, "calm_ambient")
+    preset = rng.choice(choice) if isinstance(choice, (list, tuple)) else choice
     row = compose(preset, str(workdir))
     path = str(Path(workdir) / row["file"])
     return path, lufs_of(path)
@@ -350,6 +387,7 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
         prog.set(12, "استخراج صدا")
         audio = to_audio(video, workdir / "studio_audio.mp3")
         prog.set(18, "زمان‌بندی کلمات")
+        st = {**st, "text": fix_text(select_client, st["text"])}
         rows = align_client.align_words(audio, st["text"])
         if not rows:
             raise ValueError("no word times")
