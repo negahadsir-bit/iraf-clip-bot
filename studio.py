@@ -356,28 +356,26 @@ def fix_text(client, text: str) -> str:
     return " ".join(out)
 
 
-def pick_music(mood: str, channel_rows: list, tg, workdir: Path, lufs_of, compose, presets, rng=random):
-    """(file, lufs): a channel track tagged with the mood, else an original synthesized bed."""
-    tagged = [r for r in channel_rows if r.get("file_id") and mood in r.get("tags", [])]
-    if tagged:
-        row = rng.choice(tagged)
+def pick_music(mood: str, channel_rows: list, tg, workdir: Path, lufs_of, rng=random):
+    """(file, lufs) of a track from the channel's own catalog: one tagged with the mood, else
+    any other; (None, None) when the catalog has nothing (no music is ever synthesized)."""
+    usable = [r for r in channel_rows if r.get("file_id")]
+    ordered = [r for r in usable if mood in r.get("tags", [])] or usable
+    rows = list(ordered)
+    rng.shuffle(rows)
+    for row in rows:
         try:
             dest = Path(workdir) / "music_in.mp3"
             tg.download(tg.get_file_path(row["file_id"]), dest)
             return str(dest), lufs_of(str(dest))
         except Exception as e:  # noqa: BLE001
-            print(f"channel track failed, composing: {type(e).__name__}", file=sys.stderr, flush=True)
-    choice = presets.get(mood, "calm_ambient")
-    preset = rng.choice(choice) if isinstance(choice, (list, tuple)) else choice
-    row = compose(preset, str(workdir))
-    path = str(Path(workdir) / row["file"])
-    return path, lufs_of(path)
+            print(f"channel track failed: {type(e).__name__}", file=sys.stderr, flush=True)
+    return None, None
 
 
 def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir: Path, music_catalog: Path) -> None:
     """Fetch the clip, time its words, pick music, render and send."""
     import gap_render
-    import music_synth
     try:
         prog = Progress(tg, chat_id, f"ساخت ویدیو · قالب «{TEMPLATES[st['template']]}»")
         workdir = Path(workdir)
@@ -398,8 +396,7 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
             channel = json.loads(Path(music_catalog).read_text(encoding="utf-8")) if Path(music_catalog).exists() else []
         except (OSError, ValueError):
             channel = []
-        music_file, music_lufs = pick_music(mood, channel, tg, workdir, gap_render.lufs_of, music_synth.compose,
-                                            music_synth.MOOD_TO_PRESET)
+        music_file, music_lufs = pick_music(mood, channel, tg, workdir, gap_render.lufs_of)
         out = str(workdir / "studio_out.mp4")
         prog.set(45, "طراحی زیرنویس‌ها", force=True)
         gap_render.main(str(video), st["text"], st["name"], st["title"], out, str(workdir / "render"), rows=rows,
