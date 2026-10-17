@@ -61,6 +61,8 @@ _HARD_END = re.compile(r"[.\u061f?!]$")
 _SOFT_END = re.compile(r"[\u060c,\u061b:]$")
 _NOT_LAST = {"از", "به", "در", "با", "تا", "بر", "برای", "که", "و", "یا", "چون", "اگر", "اما", "ولی", "این", "آن", "یک", "هر", "همه", "مثل", "مانند"}
 _NOT_FIRST = {"را"}
+PAUSE_BREAK = 0.55  # a pause this long ends the phrase even without punctuation
+COMMA_PAUSE = 0.3  # a comma followed by this much silence ends the phrase
 
 
 def _line_cost(words, i, j, ideal, soft_after):
@@ -112,7 +114,8 @@ def group_words(words, times, max_words=7, max_chars=40):
     for i in range(n):
         cur.append(i)
         gap = (times[i + 1][0] - times[i][1]) if i + 1 < n else 9
-        if _HARD_END.search(words[i]) or gap > 0.7:
+        pause = gap > PAUSE_BREAK or (gap > COMMA_PAUSE and bool(_SOFT_END.search(words[i])))
+        if _HARD_END.search(words[i]) or (pause and len(cur) >= 2):
             units.append(cur)
             cur = []
     if cur:
@@ -125,6 +128,20 @@ def group_words(words, times, max_words=7, max_chars=40):
             text = re.sub(r"[\u060c,.\u061b:]+", "", " ".join(words[k] for k in idx)).strip()
             out.append((text, times[idx[0]][0], times[idx[-1]][1]))
     return out
+
+
+def trim_unheard(words, rows):
+    """Words at the very start or end that Gemini found nothing of in the audio (the video was cut a little
+    inside the suggested text) are not shown: they would flash on screen for an instant."""
+    def unheard(r):
+        return not str(r.get("heard", "x")).strip() and float(r.get("end", 0)) - float(r.get("start", 0)) < 0.02
+    a, b = 0, len(rows)
+    while a < b and unheard(rows[a]):
+        a += 1
+    while b > a and unheard(rows[b - 1]):
+        b -= 1
+    lead, tail = a, len(rows) - b
+    return words[lead:len(words) - tail if tail else None], rows[a:b]
 
 
 def caption_schedule(groups, total):
@@ -225,7 +242,8 @@ def lufs_of(path):
     return float(m[-1]) if m else -23.0
 
 
-FADE = 2.0  # the last seconds fade out (picture to black, sound to silence)
+FADE = 1.6  # the end fades out (picture to black, sound to silence) once the last word is said
+FADE_GAP = 0.15  # the fade starts this long after the last word ends
 
 
 FADE_IN = 0.4  # the first caption eases in instead of popping onto the screen
@@ -236,20 +254,27 @@ def cap_fade(sched):
     return "" if first is None else f",fade=t=in:st={first:.3f}:d={FADE_IN}:alpha=1"
 
 
-def afade_out(L):
-    return f"afade=t=out:st={max(0.0, L - FADE):.3f}:d={min(FADE, L):.3f}"
+def plan_end(L, last_end):
+    """(total length, fade start): the fade begins after the last spoken word; when the clip ends right on
+    the last word, the length grows so the fade happens on a held last frame instead of eating the sentence."""
+    start = max(last_end + FADE_GAP, L - FADE, 0.0)
+    return max(L, start + FADE), start
+
+
+def afade_out(start):
+    return f"afade=t=out:st={start:.3f}:d={FADE:.3f}"
 
 
 MUSIC_BELOW = 5.0  # dB under the speech loudness: heard, never competing with the voice
 
 
-def music_inputs(music_file, music_lufs, video, L):
+def music_inputs(music_file, music_lufs, video, L, fade_start, ext=0.0):
     """(extra ffmpeg inputs, filter for [aout]) mixing the track low and constant under the speech."""
     gain = lufs_of(video) - MUSIC_BELOW - music_lufs
-    fo = max(0.0, L - 2.0)
     f = (f"[4:a]aloop=loop=-1:size=2e9,atrim=0:{L:.3f},volume={gain:.1f}dB,"
-         f"afade=t=in:d=0.5,afade=t=out:st={fo:.2f}:d=2[mus];"
-         f"[0:a][mus]amix=inputs=2:duration=first:normalize=0,{afade_out(L)}[aout]")
+         f"afade=t=in:d=0.5[mus];"
+         f"[0:a]apad=pad_dur={ext:.3f}[va];"
+         f"[va][mus]amix=inputs=2:duration=first:normalize=0,{afade_out(fade_start)}[aout]")
     return ["-i", music_file], f
 
 
@@ -261,13 +286,16 @@ def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_
     chunks = wt.refine_chunks(x, wt.speech_chunks(x))
     anchors = []
     if rows:  # real word times (Gemini), fixed against the audio
-        words = text.split()
+        words, rows = trim_unheard(text.split(), rows)
         t0 = wt.rows_to_words(words, rows)
         t1, anchors = wt.lock_to_pauses(t0, chunks)
         times = wt.from_gemini([{"start": a, "end": b} for a, b in t1], chunks)
     else:
         words = text.split()
         times = wt.align_acoustic(words, chunks, x)
+    L_media = L
+    L, fade_start = plan_end(L_media, max((b for a, b in times), default=0.0))
+    ext = L - L_media  # the picture is held this long after the clip so the last words are not cut by the fade
     sched = caption_schedule(group_words(words, times), L)
     json.dump(sched, open(f"{work}/schedule.json", "w"), ensure_ascii=False, indent=1)
     json.dump({"length": L, "chunks": [[round(float(p), 3), round(float(q), 3)] for p, q in chunks],
@@ -276,14 +304,14 @@ def main(video, text, guest, title, out, work="/tmp/gap_work", rows=None, music_
     render_layers(work, f"{guest} / {title}", sched)
     bf, ox, oy = badge_filter(L, template)
     fc = (bf + f";[0:v]scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,"
-          f"fps={FPS},format=yuv420p[bg];[bg][2:v]overlay=0:0:eof_action=pass[a];"
+          f"fps={FPS}{f',tpad=stop_mode=clone:stop_duration={ext:.3f}' if ext > 0 else ''},format=yuv420p[bg];[bg][2:v]overlay=0:0:eof_action=pass[a];"
           f"[3:v]fps={FPS},format=rgba{cap_fade(sched)}[caps];[a][caps]overlay=0:0:eof_action=pass[b];"
           f"[b][badge]overlay={ox}:{oy}:eof_action=pass,format=yuv420p,"
-          f"fade=t=out:st={max(0.0, L - FADE):.3f}:d={min(FADE, L):.3f}[v]")
-    extra, amap = [], ["-map", "0:a?", "-af", afade_out(L)]
+          f"fade=t=out:st={fade_start:.3f}:d={FADE:.3f}[v]")
+    extra, amap = [], ["-map", "0:a?", "-af", f"apad=pad_dur={ext:.3f}," + afade_out(fade_start)]
     if music_file:
         extra, af = music_inputs(music_file, music_lufs if music_lufs is not None else lufs_of(music_file),
-                                 video, L)
+                                 video, L, fade_start, ext)
         fc += ";" + af
         amap = ["-map", "[aout]"]
     run_ffmpeg(L, progress, "ffmpeg", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-i", video, "-c:v", "libvpx-vp9", "-i", os.path.join(HERE, TEMPLATES[template]["file"]),
