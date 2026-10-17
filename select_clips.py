@@ -17,11 +17,13 @@ class SelectionError(Exception):
     pass
 
 
-def _task(want: int) -> str:
+def _task(want: int, strict: bool = False) -> str:
+    fill = ("اگر برش مناسب کمتر از این تعداد است همان‌ها را بده و برای پر کردن تعداد برش بی‌ربط اضافه نکن؛ "
+            if strict else f"تا جای ممکن در همان {want} مورد پر کن؛ ")
     return (
         f"تو دستیار انتخاب کلیپ از مصاحبه‌های بلند هستی. بر اساس قوانین بالا، حداکثر {want} بازه‌ی "
-        "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر، و تا جای ممکن در "
-        f"همان {want} مورد پر کن، پخش‌شده در کل مصاحبه (نه فقط ابتدا)؛ اگر چیز خوبی نیست "
+        "مناسب برای کلیپ حدود یک‌دقیقه‌ای پیشنهاد بده، از بهترین به ضعیف‌تر، پخش‌شده در کل مصاحبه "
+        "(نه فقط ابتدا)؛ " + fill + "اگر چیز خوبی نیست "
         "فهرست خالی برگردان. هر جمله با شماره‌ی [n] آمده. فقط JSON برگردان: "
         '[{"rank": 1, "from": شماره‌ی جمله‌ی شروع, "to": شماره‌ی جمله‌ی پایان, "reason": "دلیل کوتاه به فارسی", "top": false}]. '
         "from و to شماره‌ی جمله‌اند (نه زمان) و to ≥ from. بین همه‌ی برش‌ها حداکثر ۳ مورد را که "
@@ -127,7 +129,7 @@ def select_clips(sentences: list[Sentence], rules: str, client,
                  want: int = 10, focus=(), examples: str = "") -> list[Clip]:
     note = focus_note(focus)
     prompt = "\n\n".join(part for part in (
-        rules, note, examples, _task(want + EXTRA),
+        rules, note, examples, _task(want + EXTRA, strict=bool(note)),
         f"جمله‌ها (شماره، زمان، متن):\n{_numbered(sentences)}") if part)
     try:
         raw = client.generate_json(prompt)
