@@ -11,8 +11,6 @@ from memory import examples_note, save_interview
 from media import InputError, fetch_input, resolve_input, to_audio
 from retry import BusyError, QuotaError
 from select_clips import SelectionError, select_clips
-from verify import verify_clips
-from polish import polish_edges
 from proofread import proofread_clips
 from finalize import finalize_clips
 from refine import refine_clips
@@ -67,6 +65,9 @@ class _Progress:
         print(f"transcribed chunk {done}/{total}", file=sys.stderr, flush=True)
         self._show(f"⏳ {_bar(done, total)} {round(100 * done / total)}%  (تکه {done} از {total})")
 
+    def reviewing(self) -> None:
+        self._show("🎧 برش‌ها انتخاب شد؛ در حال شنیدن دوباره و بازبینی دقیق هر برش (چند دقیقه)…")
+
     def selecting(self) -> None:
         self._show("✍️ متن کامل شد؛ در حال انتخاب بهترین برش‌ها…")
 
@@ -90,21 +91,12 @@ def process(message: dict, deps: Deps, cats: tuple = ()) -> list[str]:
             examples = ""
         clips = select_clips(sentences, rules_for(deps.rules, cats), deps.select_client, focus=cats,
                              examples=examples)
+        progress.reviewing()
         try:  # re-listen to each clip's surroundings: short audio gives accurate times
             clips = refine_clips(clips, audio, audio_seconds(audio), deps.transcribe_client,
                                  deps.workdir)
         except Exception as e:  # noqa: BLE001
             print(f"refine skipped: {type(e).__name__}", file=sys.stderr, flush=True)
-        try:  # confirm both edges by listening to short windows around them
-            clips = polish_edges(clips, audio, audio_seconds(audio), deps.transcribe_client,
-                                 deps.workdir)
-        except Exception as e:  # noqa: BLE001
-            print(f"polish skipped: {type(e).__name__}", file=sys.stderr, flush=True)
-        try:  # double-check clips whose place is doubtful (unconfirmed edges, end of the file)
-            clips = verify_clips(clips, audio, audio_seconds(audio), deps.transcribe_client,
-                                 deps.workdir)
-        except Exception as e:  # noqa: BLE001
-            print(f"verify skipped: {type(e).__name__}", file=sys.stderr, flush=True)
         try:  # final editor: best self-contained stretch of each clip, nonsense dropped
             clips = finalize_clips(clips, audio, audio_seconds(audio), deps.transcribe_client,
                                    deps.select_client, deps.workdir)
