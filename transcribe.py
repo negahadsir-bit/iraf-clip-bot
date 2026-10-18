@@ -161,6 +161,14 @@ _PROMPT_CORRECT = (
     "کلمه‌ی پیش‌نویس را نگه دار. "
     'فقط JSON برگردان: [{"text": "متن اصلاح‌شده‌ی کامل"}]')
 
+_HINT = ("\nنظر دوم: این رونویسی خودکار یک سیستم دیگر از همین صداست و ممکن است غلط داشته باشد. "
+         "فقط وقتی با صدا می‌خواند از آن کمک بگیر و اگر با صدا نمی‌خواند نادیده‌اش بگیر:\n«%s»\n")
+
+
+def _hint(text: str) -> str:
+    text = (text or "").strip()
+    return _HINT.replace("%s", text[:3000]) if text else ""
+
 
 class GeminiClient:
     """Real client; google-genai imported lazily (not unit-tested)."""
@@ -226,9 +234,9 @@ class GeminiClient:
             return []
         return [d for d in data if isinstance(d, dict) and "text" in d] if isinstance(data, list) else []
 
-    def correct_text(self, audio: Path, draft: str) -> str:
-        """The draft text of a short clip, corrected by listening to it again."""
-        rows = self._ask(audio, _PROMPT_CORRECT.replace("%s", draft), careful=True)
+    def correct_text(self, audio: Path, draft: str, hint: str = "") -> str:
+        """The draft text of a short clip, corrected by listening to it again (hint: a second opinion)."""
+        rows = self._ask(audio, _PROMPT_CORRECT.replace("%s", draft) + _hint(hint), careful=True)
         return str(rows[0].get("text", "")) if rows else ""
 
     def align_words(self, audio: Path, text: str = "") -> list[dict]:
@@ -253,8 +261,8 @@ class GeminiClient:
         """Sentences of a short clip, written by the strongest available model."""
         return self.transcribe_sentences(audio, careful=True)
 
-    def transcribe_sentences(self, audio: Path, careful: bool = False):
-        rows = self._ask(audio, _PROMPT_SENT, careful=careful)
+    def transcribe_sentences(self, audio: Path, careful: bool = False, hint: str = ""):
+        rows = self._ask(audio, _PROMPT_SENT + _hint(hint), careful=careful)
         out = []
         for r in rows:
             try:
