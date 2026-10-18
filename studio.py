@@ -342,6 +342,45 @@ def hear_again(client, audio: Path, text: str) -> str:
     return new if new and accept(text, new) else text
 
 
+CAPTION_ROUNDS = 2          # a first full listening, then one more to verify it
+_FIRST = (0.7, 1.25, 0.45)  # length range and similarity of the first result against the pasted text
+_VERIFY = (0.9, 1.1, 0.9)   # the verifying round may only polish (about one word in ten)
+
+
+def _caption_ok(base: str, new: str, limits) -> bool:
+    from difflib import SequenceMatcher
+    lo, hi, sim = limits
+    a, b = base.split(), new.split()
+    if not a or not b or not lo <= len(b) / len(a) <= hi:
+        return False
+    return SequenceMatcher(None, a, b, autojunk=False).ratio() >= sim
+
+
+def perfect_text(client, audio: Path, text: str) -> str:
+    """The caption text at full strength: a spelling pass against the voice, then up to two careful
+    listenings that judge every reading (including a second speech engine's), write Dari in standard
+    Persian and cut stray half-words at the edges. Any step that fails or drifts too far is skipped."""
+    from persian import normalize_fa
+    text = normalize_fa(text)
+    best = hear_again(client, audio, text)
+    if not hasattr(client, "caption_text"):
+        return best
+    readings, base, limits = [r for r in dict.fromkeys([text, best]) if r], text, _FIRST
+    for n in range(CAPTION_ROUNDS):
+        try:
+            new = normalize_fa(client.caption_text(audio, readings))
+        except Exception as e:  # noqa: BLE001 - a text pass is never worth failing the video
+            print(f"caption listening {n + 1} skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+            break
+        if not new or not _caption_ok(base, new, limits):
+            print(f"caption listening {n + 1} rejected", file=sys.stderr, flush=True)
+            break
+        print(f"caption listening {n + 1}: {sum(1 for x, y in zip(base.split(), new.split()) if x != y)} words differ",
+              file=sys.stderr, flush=True)
+        best, readings, base, limits = new, [new], new, _VERIFY
+    return best
+
+
 def fix_text(client, text: str) -> str:
     """Obvious mis-heard words corrected; anything doubtful stays as it was (captions must match the voice)."""
     from difflib import SequenceMatcher
@@ -407,8 +446,9 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
         video = fetch_input(InputRef(kind, rid), tg, workdir)
         prog.set(12, "استخراج صدا")
         audio = to_audio(video, workdir / "studio_audio.mp3")
-        prog.set(18, "زمان‌بندی کلمات")
-        st = {**st, "text": fix_text(select_client, hear_again(align_client, audio, st["text"]))}
+        prog.set(18, "بازبینی نهایی متن با صدا")
+        st = {**st, "text": fix_text(select_client, perfect_text(align_client, audio, st["text"]))}
+        prog.set(26, "زمان‌بندی کلمات")
         rows = align_client.align_words(audio, st["text"])
         if not rows:
             raise ValueError("no word times")
