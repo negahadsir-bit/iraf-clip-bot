@@ -1,4 +1,5 @@
-"""Second check for clips whose position is doubtful: re-listen, and drop what cannot be confirmed."""
+"""Second check for clips whose position is doubtful: re-listen and move them to where their words are
+heard. A clip that cannot be located is kept (flagged); the final editor re-listens to its audio anyway."""
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -21,7 +22,8 @@ def is_risky(clip: Clip, total: float) -> bool:
 
 def verify_one(clip: Clip, audio: Path, total: float, client, workdir: Path):
     """The clip with confirmed times (shaky cleared), or None when its words are not
-    heard anywhere near where it was supposed to be."""
+    heard anywhere near where it was supposed to be (speech recognition on dialect varies
+    from listen to listen, so that alone never proves the clip wrong)."""
     for pad in PADS:
         w0, w1 = max(0.0, clip.start - pad), min(total, clip.end + pad)
         dest = workdir / f"ver_{clip.rank}_{int(pad)}.mp3"
@@ -32,7 +34,7 @@ def verify_one(clip: Clip, audio: Path, total: float, client, workdir: Path):
             print(f"verify clip {clip.rank}: confirmed {clip.start:.1f}-{clip.end:.1f} -> "
                   f"{start:.1f}-{end:.1f} (pad {pad:.0f}s)", file=sys.stderr, flush=True)
             return replace(clip, start=start, end=end, shaky=False)
-    print(f"verify clip {clip.rank}: NOT confirmed, dropped", file=sys.stderr, flush=True)
+    print(f"verify clip {clip.rank}: not confirmed, kept as is", file=sys.stderr, flush=True)
     return None
 
 
@@ -54,8 +56,4 @@ def verify_clips(clips: list[Clip], audio: Path, total: float, client, workdir: 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         results = dict(zip((c.rank for c in risky), [f.result() for f in
                                                     [pool.submit(work, c) for c in risky]]))
-    kept = [results[c.rank] if c.rank in results else c for c in clips]
-    kept = [c for c in kept if c is not None]
-    if not kept:  # never answer with nothing because of the double check
-        return clips
-    return [replace(c, rank=i) for i, c in enumerate(kept, 1)]
+    return [results.get(c.rank) or c for c in clips]
