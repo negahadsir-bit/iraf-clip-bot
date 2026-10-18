@@ -86,6 +86,11 @@ def main() -> int:
     tg = Telegram(cfg.bot_token)
     rules = (Path(__file__).parent / "rules.md").read_text(encoding="utf-8")
     t_client, s_client = GeminiClient(cfg.gemini_key), make_select_client(os.environ, cfg.gemini_key)
+    dg_key = (os.environ.get("DEEPGRAM_API_KEY") or "").strip()
+    if dg_key:  # optional second listener: text second opinion + acoustic word times
+        from deepgram import DeepgramClient
+        from hearing import HybridClient
+        t_client = HybridClient(t_client, DeepgramClient(dg_key))
     offset = None
     deadline = time.time() + BUDGET_SECONDS
     guard = NetGuard()
