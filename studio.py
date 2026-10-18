@@ -329,6 +329,19 @@ _FIX_PROMPT = ("این متن گفتار فارسی محاوره‌ای (با ل
 MAX_FIXED = 0.15  # more changed words than this share means the model rewrote the text: keep the original
 
 
+def hear_again(client, audio: Path, text: str) -> str:
+    """The caption text checked against the video's own voice; typography cleaned either way."""
+    from persian import normalize_fa
+    from proofread import accept
+    text = normalize_fa(text)
+    try:
+        new = normalize_fa(client.correct_text(audio, text))
+    except Exception as e:  # noqa: BLE001 - a text pass is never worth failing the video
+        print(f"audio text check skipped: {type(e).__name__}", file=sys.stderr, flush=True)
+        return text
+    return new if new and accept(text, new) else text
+
+
 def fix_text(client, text: str) -> str:
     """Obvious mis-heard words corrected; anything doubtful stays as it was (captions must match the voice)."""
     from difflib import SequenceMatcher
@@ -353,7 +366,8 @@ def fix_text(client, text: str) -> str:
             out += words[i1:i2]
     if changed > max(3, len(words) * MAX_FIXED):
         return text
-    return " ".join(out)
+    from persian import normalize_fa
+    return normalize_fa(" ".join(out))
 
 
 def _fetch_url(url: str, dest: Path) -> None:
@@ -394,7 +408,7 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
         prog.set(12, "استخراج صدا")
         audio = to_audio(video, workdir / "studio_audio.mp3")
         prog.set(18, "زمان‌بندی کلمات")
-        st = {**st, "text": fix_text(select_client, st["text"])}
+        st = {**st, "text": fix_text(select_client, hear_again(align_client, audio, st["text"]))}
         rows = align_client.align_words(audio, st["text"])
         if not rows:
             raise ValueError("no word times")
