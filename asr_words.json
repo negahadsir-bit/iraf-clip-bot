@@ -1,0 +1,346 @@
+{
+ "s1.mp3": [
+  {
+   "word": "پروسه",
+   "start": 0.32,
+   "end": 0.39999998,
+   "confidence": 0.76416016,
+   "punctuated_word": "پروسه"
+  },
+  {
+   "word": "و",
+   "start": 0.39999998,
+   "end": 0.64,
+   "confidence": 0.99902344,
+   "punctuated_word": "و"
+  },
+  {
+   "word": "ثبت",
+   "start": 0.64,
+   "end": 0.96,
+   "confidence": 0.9970703,
+   "punctuated_word": "ثبت"
+  },
+  {
+   "word": "احوال",
+   "start": 0.96,
+   "end": 1.4399999,
+   "confidence": 0.98291016,
+   "punctuated_word": "احوال"
+  },
+  {
+   "word": "و",
+   "start": 1.4399999,
+   "end": 1.76,
+   "confidence": 0.9460449,
+   "punctuated_word": "و"
+  },
+  {
+   "word": "اینا",
+   "start": 1.76,
+   "end": 2.0,
+   "confidence": 0.9807129,
+   "punctuated_word": "اینا"
+  },
+  {
+   "word": "ازش",
+   "start": 2.0,
+   "end": 2.7199998,
+   "confidence": 0.9760742,
+   "punctuated_word": "ازش"
+  },
+  {
+   "word": "پرسون",
+   "start": 3.6,
+   "end": 4.0,
+   "confidence": 0.5050456,
+   "punctuated_word": "پرسون"
+  },
+  {
+   "word": "کرد",
+   "start": 4.0,
+   "end": 4.16,
+   "confidence": 0.98535156,
+   "punctuated_word": "کرد"
+  },
+  {
+   "word": "فامیلیت",
+   "start": 4.16,
+   "end": 4.7999997,
+   "confidence": 0.9211426,
+   "punctuated_word": "فامیلیت"
+  },
+  {
+   "word": "چیست؟",
+   "start": 4.7999997,
+   "end": 5.36,
+   "confidence": 0.61328125,
+   "punctuated_word": "چیست؟"
+  },
+  {
+   "word": "پرسان",
+   "start": 5.7599998,
+   "end": 6.24,
+   "confidence": 0.5869751,
+   "punctuated_word": "پرسان"
+  }
+ ],
+ "s2.mp3": [
+  {
+   "word": "قبلش",
+   "start": 0.0,
+   "end": 0.24,
+   "confidence": 0.9873047,
+   "punctuated_word": "قبلش"
+  },
+  {
+   "word": "بگم",
+   "start": 0.24,
+   "end": 0.64,
+   "confidence": 0.9980469,
+   "punctuated_word": "بگم"
+  },
+  {
+   "word": "که",
+   "start": 0.64,
+   "end": 1.12,
+   "confidence": 0.99609375,
+   "punctuated_word": "که"
+  },
+  {
+   "word": "چی",
+   "start": 1.12,
+   "end": 1.36,
+   "confidence": 0.9921875,
+   "punctuated_word": "چی"
+  },
+  {
+   "word": "شد",
+   "start": 1.36,
+   "end": 1.52,
+   "confidence": 0.8378906,
+   "punctuated_word": "شد"
+  },
+  {
+   "word": "رفتم",
+   "start": 1.52,
+   "end": 2.0,
+   "confidence": 0.5136719,
+   "punctuated_word": "رفتم"
+  },
+  {
+   "word": "اصن،",
+   "start": 2.0,
+   "end": 2.3999999,
+   "confidence": 0.4572754,
+   "punctuated_word": "اصن،"
+  },
+  {
+   "word": "من",
+   "start": 2.3999999,
+   "end": 2.56,
+   "confidence": 0.99902344,
+   "punctuated_word": "من"
+  },
+  {
+   "word": "هر",
+   "start": 2.56,
+   "end": 2.8,
+   "confidence": 0.89501953,
+   "punctuated_word": "هر"
+  },
+  {
+   "word": "سال",
+   "start": 2.8,
+   "end": 3.12,
+   "confidence": 0.96972656,
+   "punctuated_word": "سال"
+  },
+  {
+   "word": "میخواستم",
+   "start": 3.12,
+   "end": 3.6,
+   "confidence": 0.8984375,
+   "punctuated_word": "میخواستم"
+  },
+  {
+   "word": "بروم،",
+   "start": 3.6,
+   "end": 4.16,
+   "confidence": 0.7058919,
+   "punctuated_word": "بروم،"
+  }
+ ],
+ "s3.mp3": [
+  {
+   "word": "جاهای",
+   "start": 0.0,
+   "end": 0.39999998,
+   "confidence": 0.3984375,
+   "punctuated_word": "جاهای"
+  },
+  {
+   "word": "دیگه",
+   "start": 0.39999998,
+   "end": 0.64,
+   "confidence": 0.99609375,
+   "punctuated_word": "دیگه"
+  },
+  {
+   "word": "مثلا",
+   "start": 0.64,
+   "end": 0.96,
+   "confidence": 0.6791992,
+   "punctuated_word": "مثلا"
+  },
+  {
+   "word": "یکی",
+   "start": 0.96,
+   "end": 1.28,
+   "confidence": 0.99902344,
+   "punctuated_word": "یکی"
+  },
+  {
+   "word": "موبایل",
+   "start": 1.28,
+   "end": 1.5999999,
+   "confidence": 1.0,
+   "punctuated_word": "موبایل"
+  },
+  {
+   "word": "خودرا",
+   "start": 1.5999999,
+   "end": 1.92,
+   "confidence": 0.69311523,
+   "punctuated_word": "خودرا"
+  },
+  {
+   "word": "در",
+   "start": 1.92,
+   "end": 2.08,
+   "confidence": 0.6040039,
+   "punctuated_word": "در"
+  },
+  {
+   "word": "اینستاگرامتو",
+   "start": 2.08,
+   "end": 2.96,
+   "confidence": 0.55371094,
+   "punctuated_word": "اینستاگرامتو"
+  },
+  {
+   "word": "رول",
+   "start": 2.96,
+   "end": 3.28,
+   "confidence": 0.951416,
+   "punctuated_word": "رول"
+  },
+  {
+   "word": "میکنه",
+   "start": 3.28,
+   "end": 3.6799998,
+   "confidence": 0.93359375,
+   "punctuated_word": "میکنه"
+  },
+  {
+   "word": "باز",
+   "start": 3.6799998,
+   "end": 4.0,
+   "confidence": 0.99902344,
+   "punctuated_word": "باز"
+  },
+  {
+   "word": "میبینی",
+   "start": 4.0,
+   "end": 4.3199997,
+   "confidence": 0.99316406,
+   "punctuated_word": "میبینی"
+  }
+ ],
+ "s4.mp3": [
+  {
+   "word": "چون",
+   "start": 0.0,
+   "end": 0.96,
+   "confidence": 0.21569824,
+   "punctuated_word": "چون"
+  },
+  {
+   "word": "میدونیم",
+   "start": 0.96,
+   "end": 1.1999999,
+   "confidence": 0.9350586,
+   "punctuated_word": "میدونیم"
+  },
+  {
+   "word": "حرفمون",
+   "start": 1.1999999,
+   "end": 1.76,
+   "confidence": 0.970459,
+   "punctuated_word": "حرفمون"
+  },
+  {
+   "word": "درسته",
+   "start": 1.76,
+   "end": 2.24,
+   "confidence": 0.9580078,
+   "punctuated_word": "درسته"
+  },
+  {
+   "word": "با",
+   "start": 2.24,
+   "end": 2.56,
+   "confidence": 0.81152344,
+   "punctuated_word": "با"
+  },
+  {
+   "word": "این",
+   "start": 2.56,
+   "end": 2.6399999,
+   "confidence": 0.70947266,
+   "punctuated_word": "این"
+  },
+  {
+   "word": "که",
+   "start": 2.6399999,
+   "end": 2.8,
+   "confidence": 0.84765625,
+   "punctuated_word": "که"
+  },
+  {
+   "word": "زن",
+   "start": 2.8,
+   "end": 2.96,
+   "confidence": 0.62060547,
+   "punctuated_word": "زن"
+  },
+  {
+   "word": "باشیم",
+   "start": 2.96,
+   "end": 3.5199997,
+   "confidence": 0.94628906,
+   "punctuated_word": "باشیم"
+  },
+  {
+   "word": "و",
+   "start": 4.24,
+   "end": 4.48,
+   "confidence": 0.98657227,
+   "punctuated_word": "و"
+  },
+  {
+   "word": "من",
+   "start": 4.48,
+   "end": 4.72,
+   "confidence": 0.78466797,
+   "punctuated_word": "من"
+  },
+  {
+   "word": "اینو",
+   "start": 4.72,
+   "end": 4.96,
+   "confidence": 0.9641113,
+   "punctuated_word": "اینو"
+  }
+ ]
+}
