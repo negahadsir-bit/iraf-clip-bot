@@ -161,6 +161,22 @@ _PROMPT_CORRECT = (
     "کلمه‌ی پیش‌نویس را نگه دار. "
     'فقط JSON برگردان: [{"text": "متن اصلاح‌شده‌ی کامل"}]')
 
+_PROMPT_CAPTION = (
+    "این فایل صوتی یک برش کوتاه از یک مصاحبه‌ی فارسی است و باید متن زیرنویس نهایی‌اش ساخته شود. " + _DARI_NOTE +
+    "چند خوانش از همین صدا داری؛ هرکدام ممکن است غلط داشته باشد و مرجع نهایی خودِ صداست:\n%s\n"
+    "با گوش دادن دقیق و چندباره، متن نهایی را بنویس:\n"
+    "۱. هر کلمه باید همان چیزی باشد که واقعاً گفته می‌شود. عبارتی که بی‌معنی است یا کلمه‌های بی‌ربط کنار هم دارد "
+    "یعنی غلط شنیده شده؛ همان قسمت را دوباره بشنو و درستش را بنویس.\n"
+    "۲. گویش دری را به فارسی معیار بنویس، بدون خراب کردن معنا و لحن: «استند/استیم» ← «هستند/هستیم»، "
+    "«غذای خودا خورد» ← «غذای خود را خورد»، «را»ی حذف‌شده را بگذار. اصطلاح‌های رایج مثل «چه رقم» و ساختار جمله را "
+    "عوض نکن. شعر و ضرب‌المثل را دقیق و کامل بنویس.\n"
+    "۳. اگر در ابتدا یا انتهای برش یک تا سه کلمه‌ی بریده‌شده هست که مال جمله‌ی قبل یا بعد است و با خود برش معنا "
+    "نمی‌دهد (مثل «الحمدلله» که ته جمله‌ی قبلی است یا «ما» که شروع جمله‌ی بعدی است)، آن را ننویس. هرگز وسط متن "
+    "چیزی حذف نکن.\n"
+    "۴. نقطه، ویرگول «،»، «؟» و «!» را درست بگذار و نیم‌فاصله را رعایت کن. چیزی از خودت اضافه نکن.\n"
+    'فقط JSON برگردان: [{"text": "متن نهایی"}]')
+
+
 _HINT = ("\nنظر دوم: این رونویسی خودکار یک سیستم دیگر از همین صداست و ممکن است غلط داشته باشد. "
          "فقط وقتی با صدا می‌خواند از آن کمک بگیر و اگر با صدا نمی‌خواند نادیده‌اش بگیر:\n«%s»\n")
 
@@ -237,6 +253,12 @@ class GeminiClient:
     def correct_text(self, audio: Path, draft: str, hint: str = "") -> str:
         """The draft text of a short clip, corrected by listening to it again (hint: a second opinion)."""
         rows = self._ask(audio, _PROMPT_CORRECT.replace("%s", draft) + _hint(hint), careful=True)
+        return str(rows[0].get("text", "")) if rows else ""
+
+    def caption_text(self, audio: Path, candidates: list[str]) -> str:
+        """The final caption of a short clip: listened to carefully, judged against the given readings."""
+        readings = "\n".join(f"خوانش {i + 1}: «{c}»" for i, c in enumerate(c for c in candidates if c))
+        rows = self._ask(audio, _PROMPT_CAPTION.replace("%s", readings), careful=True)
         return str(rows[0].get("text", "")) if rows else ""
 
     def align_words(self, audio: Path, text: str = "") -> list[dict]:
