@@ -58,6 +58,11 @@ class HybridClient:
         h = self._heard(audio)
         return self._g.correct_text(audio, draft, hint=h["text"] if h else "")
 
+    def caption_text(self, audio: Path, candidates: list[str]) -> str:
+        h = self._heard(audio)
+        extra = [h["text"]] if h and h["text"] not in candidates else []
+        return self._g.caption_text(audio, [*candidates, *extra])
+
     def transcribe_careful(self, audio: Path):
         h = self._heard(audio)
         return self._g.transcribe_sentences(audio, careful=True, hint=h["text"] if h else "")
