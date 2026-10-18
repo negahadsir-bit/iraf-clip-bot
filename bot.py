@@ -32,6 +32,8 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=
     if update.get("callback_query"):
         if studio.handle_callback(update["callback_query"], cfg, tg, ask_path):
             return nxt
+        if studio.handle_music(update["callback_query"], cfg, tg, make):  # with / without background music
+            return nxt
         if pending_path is not None and studio.handle_make(update["callback_query"], cfg, tg, pending_path):
             return nxt
         handle_callback(update["callback_query"], cfg, tg, process_fn,
