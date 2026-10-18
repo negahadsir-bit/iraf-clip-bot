@@ -26,6 +26,8 @@ FAILED = "ساخت ویدیو انجام نشد. لطفاً دوباره امت�
 ASK_TEMPLATE = "این برش در کدام قالب ساخته شود؟"
 ASK_NAME = "نام مهمان را بنویس"
 ASK_TITLE = "عنوان یا سمت مهمان را بنویس"
+ASK_MUSIC = "برای این ویدیو موسیقی زمینه بگذارم؟"
+MUSIC_LABELS = {"yes": "🎵 با موسیقی", "no": "🔇 بدون موسیقی"}
 BAR_LEN = 10
 _FA = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
@@ -88,6 +90,11 @@ def keyboard() -> dict:
     return {"inline_keyboard": [[{"text": n, "callback_data": f"tp:{k}"} for k, n in TEMPLATES.items()]]}
 
 
+def music_keyboard() -> dict:
+    return {"inline_keyboard": [[{"text": MUSIC_LABELS["yes"], "callback_data": "mu:1"},
+                                 {"text": MUSIC_LABELS["no"], "callback_data": "mu:0"}]]}
+
+
 def _pack(st: dict) -> str:
     raw = json.dumps(st, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(zlib.compress(raw, 9)).decode().rstrip("=")
@@ -114,6 +121,10 @@ def build(header: str, st: dict):
         lines.append(f"قالب: {TEMPLATES[st['template']]}")
     if st.get("name"):
         lines.append(f"نام: {st['name']}")
+    if st.get("title"):
+        lines.append(f"عنوان: {st['title']}")
+    if st.get("music"):
+        lines.append(f"موسیقی: {st['music']}")
     lines += ["متن: " + st["text"], f"ref: {st['ref']}"]
     return "\n".join(lines), None
 
@@ -133,6 +144,10 @@ def parse(message: dict) -> dict | None:
             st["template"] = next((k for k, n in TEMPLATES.items() if n == val.strip()), None)
         elif key == "نام":
             st["name"] = val.strip()
+        elif key == "عنوان":
+            st["title"] = val.strip()
+        elif key == "موسیقی":
+            st["music"] = val.strip()
         elif key == "متن":
             st["text"] = val.strip()
         elif key == "ref":
@@ -273,7 +288,30 @@ def _advance(chat_id, st: dict, answer: str, reply_to, tg, make, ask_path) -> No
         return
     st["title"] = " ".join(answer.split())
     forget_ask(ask_path, chat_id)
+    body, ents = build(ASK_MUSIC, st)
+    tg.send_message(chat_id, body, reply_markup=music_keyboard(), reply_to=reply_to, entities=ents)
+
+
+def handle_music(cb: dict, cfg, tg, make) -> bool:
+    """«mu:1» / «mu:0» buttons (with or without background music): renders the video."""
+    data = cb.get("data", "")
+    if data not in ("mu:1", "mu:0"):
+        return False
+    msg = cb.get("message") or {}
+    chat_id = msg.get("chat", {}).get("id")
+    st = parse(msg)
+    if chat_id not in cfg.allowed_chat_ids or st is None or not st.get("template") or not st.get("title") \
+            or make is None:
+        return True
+    st["music"] = "yes" if data == "mu:1" else "no"
+    try:
+        body, ents = build(MUSIC_LABELS[st["music"]], st)
+        tg.edit_message(chat_id, msg["message_id"], body, reply_markup={"inline_keyboard": []}, entities=ents)
+        tg.answer_callback(cb["id"])
+    except Exception:  # noqa: BLE001 - a stale button must never crash the bot
+        pass
     make(chat_id, st)
+    return True
 
 
 def handle_reply(message: dict, cfg, tg, make, ask_path=None) -> bool:
@@ -452,16 +490,20 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
         rows = align_client.align_words(audio, st["text"])
         if not rows:
             raise ValueError("no word times")
-        prog.set(32, "انتخاب حال‌وهوا")
-        mood = choose_mood(select_client, st["text"])
-        prog.set(38, f"موسیقی زمینه · {mood}")
-        try:
-            channel = json.loads(Path(music_catalog).read_text(encoding="utf-8")) if Path(music_catalog).exists() else []
-        except (OSError, ValueError):
-            channel = []
-        import music_bundled
-        music_file, music_lufs = pick_music(mood, [*channel, *music_bundled.ROWS], tg, workdir,
-                                            gap_render.lufs_of)
+        if st.get("music") == "no":  # asked for no music: the voice alone
+            mood, music_file, music_lufs = None, None, None
+            prog.set(38, "بدون موسیقی")
+        else:
+            prog.set(32, "انتخاب حال‌وهوا")
+            mood = choose_mood(select_client, st["text"])
+            prog.set(38, f"موسیقی زمینه · {mood}")
+            try:
+                channel = json.loads(Path(music_catalog).read_text(encoding="utf-8")) if Path(music_catalog).exists() else []
+            except (OSError, ValueError):
+                channel = []
+            import music_bundled
+            music_file, music_lufs = pick_music(mood, [*channel, *music_bundled.ROWS], tg, workdir,
+                                                gap_render.lufs_of)
         out = str(workdir / "studio_out.mp4")
         prog.set(45, "طراحی زیرنویس‌ها", force=True)
         gap_render.main(str(video), st["text"], st["name"], st["title"], out, str(workdir / "render"), rows=rows,
@@ -475,7 +517,7 @@ def make_video(chat_id: int, st: dict, tg, align_client, select_client, workdir:
         except OSError:
             pass
         prog.set(94, "ارسال ویدیو", force=True)
-        tg.send_video(chat_id, out, caption=f"{st['name']} — {st['title']}\n🎵 حال‌وهوا: {mood}")
+        tg.send_video(chat_id, out, caption=f"{st['name']} — {st['title']}" + (f"\n🎵 حال‌وهوا: {mood}" if mood else ""))
         prog.done()
     except InputError as e:
         tg.send_message(chat_id, str(e))
