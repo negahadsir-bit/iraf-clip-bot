@@ -1,0 +1,80 @@
+name: asr-compare
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pip install -r requirements.txt
+      - name: Compare Gemini and Deepgram on four sample clips
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          from pathlib import Path
+          from transcribe import GeminiClient
+
+          base = "https://raw.githubusercontent.com/negahadsir-bit/iraf-zarrebin-bot/staging/asrtest/"
+          g = GeminiClient(os.environ["GEMINI_API_KEY"])
+          key = os.environ["DEEPGRAM_API_KEY"]
+          out = ["# Gemini vs Deepgram (60-second samples)\n"]
+          words_all = {}
+
+          def deepgram(data, language):
+              url = ("https://api.deepgram.com/v1/listen?model=nova-3&language=%s"
+                     "&smart_format=true&punctuate=true&utterances=true" % language)
+              req = urllib.request.Request(url, data=data, method="POST", headers={
+                  "Authorization": "Token " + key, "Content-Type": "audio/mpeg"})
+              try:
+                  with urllib.request.urlopen(req, timeout=300) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  return {"error": e.code, "body": e.read().decode()[:400]}
+
+          for i in range(1, 5):
+              name = "s%d.mp3" % i
+              data = urllib.request.urlopen(base + name, timeout=120).read()
+              Path(name).write_bytes(data)
+              out.append("\n## %s\n" % name)
+              t0 = time.time()
+              try:
+                  rows = g.transcribe_careful(Path(name))
+                  gem = " ".join(s.text for s in rows)
+              except Exception as e:
+                  gem = "ERROR %r" % (e,)
+              out.append("**Gemini** (%.0fs):\n\n%s\n" % (time.time() - t0, gem))
+              for lang in ("fa",):
+                  t0 = time.time()
+                  js = deepgram(data, lang)
+                  if "error" in js:
+                      out.append("**Deepgram %s**: ERROR %s %s\n" % (lang, js["error"], js["body"]))
+                      continue
+                  alt = js["results"]["channels"][0]["alternatives"][0]
+                  words = alt.get("words", [])
+                  conf = sum(w.get("confidence", 0) for w in words) / max(1, len(words))
+                  out.append("**Deepgram %s** (%.0fs, %d words with times, mean confidence %.2f):\n\n%s\n"
+                             % (lang, time.time() - t0, len(words), conf, alt.get("transcript", "")))
+                  words_all[name] = words[:12]
+          Path("asr_compare.md").write_text("\n".join(out), encoding="utf-8")
+          Path("asr_words.json").write_text(json.dumps(words_all, ensure_ascii=False, indent=1), encoding="utf-8")
+          print("\n".join(out))
+          PY
+      - name: Publish results to a side branch
+        run: |
+          git config user.name "clip-bot"
+          git config user.email "clip-bot@users.noreply.github.com"
+          git checkout -q --orphan asr-results
+          git rm -rf -q . || true
+          git add -f asr_compare.md asr_words.json
+          git commit -q -m "asr comparison results"
+          git push -f origin asr-results
