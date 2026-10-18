@@ -8,7 +8,7 @@ from retry import BusyError, QuotaError, call_with_fallback, models_from_env
 
 MAX_CLIPS = 12
 TOP_MAX = 3
-EXTRA = 4  # ask for spare candidates: some get dropped (overlap, length)
+EXTRA = 6  # spare candidates: some are dropped (overlap, length, final editor)
 WORDS_PER_SEC = 2.6
 MIN_DUR, TARGET_MIN, MAX_DUR = 20.0, 35.0, 75.0
 
