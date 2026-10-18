@@ -150,6 +150,16 @@ _PROMPT_FREE_WORDS = (
     "ابتدای فایل به‌صورت عدد ثانیه‌ی اعشاری. در مکث‌ها کلمه‌ای قرار نده.")
 
 
+_PROMPT_CORRECT = (
+    "این فایل صوتی فارسی (گاهی با لهجه‌ی دری/افغانستانی) یک برش کوتاه است. متن زیر پیش‌نویسی است که از روی "
+    "همین صدا نوشته شده و چند کلمه‌اش احتمالاً غلط شنیده یا غلط املایی است:\n«%s»\n"
+    "با گوش دادن دقیق به صدا، متن را اصلاح کن تا دقیقاً همان چیزی باشد که گفته می‌شود. " + _DARI_NOTE +
+    "املای فارسی معیار را رعایت کن (ی و ک فارسی، نیم‌فاصله در «می‌خواهم»، «کتاب‌ها»، «خانه‌ام»)، نام‌ها و "
+    "اصطلاحات را درست بنویس و نقطه، ویرگول «،» و علامت سؤال «؟» را درست بگذار. ساختار و ترتیب جمله‌ها را "
+    "عوض نکن، چیزی از خودت اضافه یا حذف نکن و اگر جایی را مطمئن نشدی همان کلمه‌ی پیش‌نویس را نگه دار. "
+    'فقط JSON برگردان: [{"text": "متن اصلاح‌شده‌ی کامل"}]')
+
+
 class GeminiClient:
     """Real client; google-genai imported lazily (not unit-tested)."""
 
@@ -166,13 +176,18 @@ class GeminiClient:
         resp = call_with_fallback(
             lambda m: self._client.models.generate_content(
                 model=m, contents=[prompt, f],
-                config={"response_mime_type": "application/json"}),
+                config={"response_mime_type": "application/json", "temperature": 0}),
             self._models)
         try:
             data = json.loads(resp.text)
         except (ValueError, TypeError):
             return []
         return [d for d in data if isinstance(d, dict) and "text" in d] if isinstance(data, list) else []
+
+    def correct_text(self, audio: Path, draft: str) -> str:
+        """The draft text of a short clip, corrected by listening to it again."""
+        rows = self._ask(audio, _PROMPT_CORRECT.replace("%s", draft))
+        return str(rows[0].get("text", "")) if rows else ""
 
     def align_words(self, audio: Path, text: str = "") -> list[dict]:
         """Per-word times of a short clip; with `text`, one row per word of that text."""
