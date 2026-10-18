@@ -183,8 +183,10 @@ class GeminiClient:
                 for m in self._client.models.list():
                     name = (getattr(m, "name", "") or "").split("/")[-1]
                     acts = getattr(m, "supported_actions", None) or []
-                    bad = ("image", "tts", "live", "audio", "embedding", "vision", "robotics", "computer")
-                    if "pro" in name and "generateContent" in acts and not any(b in name for b in bad):
+                    bad = ("image", "tts", "live", "audio", "embedding", "vision", "robotics", "computer",
+                           "research", "agent", "customtools", "-exp")
+                    if (name.startswith("gemini-") and "-pro" in name and "generateContent" in acts
+                            and not any(b in name for b in bad)):
                         found.append(name)
             except Exception as e:  # noqa: BLE001 - fall back to the usual models
                 print(f"model list failed: {type(e).__name__}", file=sys.stderr, flush=True)
@@ -200,11 +202,24 @@ class GeminiClient:
 
     def _ask(self, audio: Path, prompt: str, careful: bool = False) -> list[dict]:
         f = self._client.files.upload(file=str(audio))
-        resp = call_with_fallback(
-            lambda m: self._client.models.generate_content(
-                model=m, contents=[prompt, f],
-                config={"response_mime_type": "application/json", "temperature": 0}),
-            self._careful() if careful else self._models, attempts=2 if careful else 5)
+
+        def call(models, attempts):
+            return call_with_fallback(
+                lambda m: self._client.models.generate_content(
+                    model=m, contents=[prompt, f],
+                    config={"response_mime_type": "application/json"}),
+                models, attempts=attempts)
+        if careful:
+            try:
+                resp = call(self._careful(), 2)
+            except QuotaError:
+                raise
+            except Exception as e:  # noqa: BLE001 - a strong model that fails is never fatal
+                print(f"careful listening failed ({type(e).__name__}); using the usual models",
+                      file=sys.stderr, flush=True)
+                resp = call(self._models, 5)
+        else:
+            resp = call(self._models, 5)
         try:
             data = json.loads(resp.text)
         except (ValueError, TypeError):
@@ -218,7 +233,8 @@ class GeminiClient:
 
     def align_words(self, audio: Path, text: str = "") -> list[dict]:
         """Per-word times of a short clip; with `text`, one row per word of that text."""
-        rows = self._ask(audio, _PROMPT_ALIGN.replace("%s", text) if text else _PROMPT_FREE_WORDS)
+        prompt = _PROMPT_ALIGN.replace("%s", text) if text else _PROMPT_FREE_WORDS
+        rows = self._ask(audio, prompt) or self._ask(audio, prompt)  # one retry on an empty answer
         out = []
         for r in rows:
             try:
