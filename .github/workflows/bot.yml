@@ -15,9 +15,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: ffmpeg
-        timeout-minutes: 6
-        run: which ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+      - name: ffmpeg (fast download from GitHub; apt mirrors are sometimes very slow)
+        continue-on-error: true
+        timeout-minutes: 4
+        uses: FedericoCarboni/setup-ffmpeg@v3
+      - name: ffmpeg fallback (apt, no time limit)
+        run: (which ffmpeg && which ffprobe) || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
@@ -25,7 +28,7 @@ jobs:
       - run: pip install -r requirements.txt
         timeout-minutes: 5
       - name: Chromium (system libraries only when the browser cannot start; a slow apt mirror once took 10 minutes here)
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           python -m playwright install chromium
           python -c "from playwright.sync_api import sync_playwright as p; b=p().start().chromium.launch(); b.close()" \
