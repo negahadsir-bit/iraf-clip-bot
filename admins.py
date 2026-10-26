@@ -77,3 +77,30 @@ def handle(msg: dict, cfg, tg, main_ids, path: Path = ADMINS) -> bool:
         cfg.allowed_chat_ids.discard(who)
         tg.send_message(chat, f"🗑 {who} از مدیران حذف شد.")
     return True
+
+
+START = ("سلام 👋 ربات برش کلیپ ایراف تی‌وی\n"
+         "• فایل صوتی یا ویدیویی مصاحبه (یا لینک Google Drive) را بفرست؛ دسته را انتخاب کن و «شروع» را بزن تا بهترین برش‌ها با زمان دقیق بیاید.\n"
+         "• زیر هر پیشنهاد «🎬 تولید ویدیو» را بزن، ویدیوی همان بازه را بفرست، قالب (گپ / یاران خراسانی)، نام و عنوان مهمان را بده تا ویدیوی زیرنویس‌دار ساخته شود.\n"
+         "• ربات هر ۵ دقیقه روشن می‌شود؛ اولین پاسخ ممکن است چند دقیقه طول بکشد.\n\n")
+
+COMMANDS = [{"command": "start", "description": "راهنمای ربات"},
+            {"command": "admins", "description": "فهرست مدیران"},
+            {"command": "addadmin", "description": "افزودن مدیر: /addadmin شناسه"},
+            {"command": "deladmin", "description": "حذف مدیر: /deladmin شناسه"}]
+
+
+def handle_start(msg: dict, tg) -> bool:
+    t = (msg.get("text") or "").strip().lower()
+    if not (t.startswith("/start") or t.startswith("/help") or t in ("راهنما", "دستورات")):
+        return False
+    tg.send_message(msg["chat"]["id"], START + HELP)
+    return True
+
+
+def register_menu(tg) -> None:
+    """Show the commands in Telegram's «/» menu (best effort)."""
+    try:
+        tg._call("setMyCommands", {"commands": COMMANDS})
+    except Exception as e:
+        print(f"setMyCommands failed: {e}")
