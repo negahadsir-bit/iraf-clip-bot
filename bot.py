@@ -97,10 +97,10 @@ def main() -> int:
         print(str(e), file=sys.stderr)
         return 1
     admins.merge(cfg)
-    admins.register_menu(tg)
     from select_clips import make_select_client
     from transcribe import GeminiClient
     tg = Telegram(cfg.bot_token)
+    admins.register_menu(tg)
     rules = (Path(__file__).parent / "rules.md").read_text(encoding="utf-8")
     t_client, s_client = GeminiClient(cfg.gemini_key), make_select_client(os.environ, cfg.gemini_key)
     dg_key = (os.environ.get("DEEPGRAM_API_KEY") or "").strip()
