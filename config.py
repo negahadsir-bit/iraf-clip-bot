@@ -10,7 +10,8 @@ class ConfigError(Exception):
 class Config:
     bot_token: str
     gemini_key: str
-    allowed_chat_ids: frozenset
+    allowed_chat_ids: set  # the ALLOWED_CHAT_IDS secret plus admins added from inside the bot (admins.py)
+    main_ids: frozenset = frozenset()
 
 
 def load_config(env: Mapping[str, str]) -> Config:
@@ -18,4 +19,4 @@ def load_config(env: Mapping[str, str]) -> Config:
         if not env.get(name):
             raise ConfigError(f"متغیر {name} تنظیم نشده است")
     ids = frozenset(int(p) for p in env["ALLOWED_CHAT_IDS"].split(",") if p.strip())
-    return Config(env["BOT_TOKEN"], env["GEMINI_API_KEY"], ids)
+    return Config(env["BOT_TOKEN"], env["GEMINI_API_KEY"], set(ids), ids)

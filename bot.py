@@ -4,6 +4,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import admins
 from buttons import ASK, handle_callback, keyboard
 from config import ConfigError, load_config
 from feedback import handle_reason
@@ -47,9 +48,19 @@ def handle_update(update: dict, cfg, tg, process_fn, commit=None, feedback_path=
             add_post(music_path, post)
         return nxt
     msg = update.get("message")
-    if not msg or msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
+    if not msg:
+        return nxt
+    if msg.get("chat", {}).get("id") not in cfg.allowed_chat_ids:
+        if msg.get("chat", {}).get("type") == "private":  # tell a stranger their id so an admin can add them
+            try:
+                tg.send_message(msg["chat"]["id"], f"این ربات خصوصی است.\nشناسهٔ چت شما: {msg['chat']['id']}\n"
+                                                   "این عدد را برای یکی از مدیران بفرست تا شما را اضافه کند.")
+            except Exception as e:
+                print(f"id reply failed: {e}", file=sys.stderr)
         return nxt
     chat_id = msg["chat"]["id"]
+    if admins.handle(msg, cfg, tg, getattr(cfg, "main_ids", frozenset()) or frozenset(cfg.allowed_chat_ids)):
+        return nxt
     if make is not None and studio.handle_reply(msg, cfg, tg, make, ask_path):  # name / title of a render
         return nxt
     if handle_reason(msg, cfg, tg, feedback_path):
@@ -83,6 +94,7 @@ def main() -> int:
     except ConfigError as e:
         print(str(e), file=sys.stderr)
         return 1
+    admins.merge(cfg)
     from select_clips import make_select_client
     from transcribe import GeminiClient
     tg = Telegram(cfg.bot_token)
